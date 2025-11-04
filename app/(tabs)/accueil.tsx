@@ -21,6 +21,7 @@ import { Ionicons, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { apiClient } from '../../lib/apiClient';
 import { getAuth } from '../../lib/api';
+import { DevTools } from '@/components/DevTools';
 
 // Simple number formatter with fr-FR fallback
 function formatNumber(n: number) {
@@ -903,6 +904,7 @@ export default function AccueilScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <DevTools />
     </SafeAreaView>
   );
 }

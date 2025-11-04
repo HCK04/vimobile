@@ -1,11 +1,15 @@
 import React from 'react';
 import { SafeAreaView, View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { EmptyState } from '@/components/EmptyState';
 
 export default function RendezVousScreen() {
-  const data = [
-    { id: '1', title: 'Consultation générale', date: 'Mar 24, 10:30', doctor: 'Dr. Sara Benali' },
-    { id: '2', title: 'Dentiste', date: 'Mar 26, 09:00', doctor: 'Dr. Amine El Idrissi' },
+  const router = useRouter();
+  const data: any[] = [
+    // Empty for now to show EmptyState
+    // { id: '1', title: 'Consultation générale', date: 'Mar 24, 10:30', doctor: 'Dr. Sara Benali' },
+    // { id: '2', title: 'Dentiste', date: 'Mar 26, 09:00', doctor: 'Dr. Amine El Idrissi' },
   ];
 
   return (
@@ -18,28 +22,42 @@ export default function RendezVousScreen() {
         </Pressable>
       </View>
 
-      <FlatList
-        data={data}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16, gap: 12 }}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.cardIcon}>
-              <Ionicons name="calendar" size={20} color="#2563EB" />
+      {data.length === 0 ? (
+        <EmptyState
+          icon="calendar-outline"
+          title="Aucun rendez-vous"
+          description="Prenez votre premier rendez-vous en quelques clics"
+          primaryAction={{
+            label: "Rechercher un médecin",
+            icon: "search",
+            onPress: () => router.push('/recherche'),
+          }}
+          secondaryAction={{
+            label: "Comment ça marche ?",
+            onPress: () => {
+              // Could show a modal or navigate to help
+            },
+          }}
+        />
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ padding: 16, gap: 12 }}
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <View style={styles.cardIcon}>
+                <Ionicons name="calendar" size={20} color="#2563EB" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.cardSub}>{item.date} · {item.doctor}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.cardSub}>{item.date} · {item.doctor}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-          </View>
-        )}
-        ListEmptyComponent={
-          <View style={{ padding: 24, alignItems: 'center' }}>
-            <Text style={{ color: '#6B7280' }}>Aucun rendez-vous à venir</Text>
-          </View>
-        }
-      />
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }

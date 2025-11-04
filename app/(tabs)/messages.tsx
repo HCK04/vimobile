@@ -1,11 +1,15 @@
 import React from 'react';
 import { SafeAreaView, View, Text, StyleSheet, FlatList, TextInput, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { EmptyState } from '@/components/EmptyState';
 
 export default function MessagesScreen() {
-  const messages = [
-    { id: '1', name: 'Dr. Sara Benali', last: 'Bonjour, vos résultats sont prêts.', time: '09:12' },
-    { id: '2', name: 'Clinique Al Amal', last: 'Merci pour votre visite.', time: 'Hier' },
+  const router = useRouter();
+  const messages: any[] = [
+    // Empty for now to show EmptyState
+    // { id: '1', name: 'Dr. Sara Benali', last: 'Bonjour, vos résultats sont prêts.', time: '09:12' },
+    // { id: '2', name: 'Clinique Al Amal', last: 'Merci pour votre visite.', time: 'Hier' },
   ];
 
   return (
@@ -20,21 +24,34 @@ export default function MessagesScreen() {
         <TextInput placeholder="Rechercher" placeholderTextColor="#9CA3AF" style={styles.search} />
       </View>
 
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 10 }}
-        renderItem={({ item }) => (
-          <Pressable style={styles.row}>
-            <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.split(' ').map(s => s[0]).slice(0,2).join('')}</Text></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>{item.name}</Text>
-              <Text style={styles.rowSub} numberOfLines={1}>{item.last}</Text>
-            </View>
-            <Text style={styles.time}>{item.time}</Text>
-          </Pressable>
-        )}
-      />
+      {messages.length === 0 ? (
+        <EmptyState
+          icon="chatbubbles-outline"
+          title="Aucun message pour le moment"
+          description="Vos conversations avec les professionnels de santé apparaîtront ici"
+          primaryAction={{
+            label: "Trouver un médecin",
+            icon: "search",
+            onPress: () => router.push('/recherche'),
+          }}
+        />
+      ) : (
+        <FlatList
+          data={messages}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 10 }}
+          renderItem={({ item }) => (
+            <Pressable style={styles.row}>
+              <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.split(' ').map((s: string) => s[0]).slice(0,2).join('')}</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{item.name}</Text>
+                <Text style={styles.rowSub} numberOfLines={1}>{item.last}</Text>
+              </View>
+              <Text style={styles.time}>{item.time}</Text>
+            </Pressable>
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
