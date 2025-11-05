@@ -14,11 +14,14 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { apiClient } from '../../lib/apiClient';
 import { getAuth } from '../../lib/api';
+import { useSearch } from '../../lib/useSearch';
 import { DevTools } from '@/components/DevTools';
 import { PersonalizedHeader } from '@/components/PersonalizedHeader';
 import { NextAppointmentCard } from '@/components/NextAppointmentCard';
 import { QuickActionsGrid } from '@/components/QuickActionsGrid';
 import { UserStatsRow } from '@/components/UserStatsRow';
+import CityBottomSheet from '@/components/CityBottomSheet';
+import FiltersChipRow from '@/components/FiltersChipRow';
 
 const MOROCCAN_CITIES = [
   'Casablanca', 'Rabat', 'Fès', 'Marrakech', 'Agadir', 'Tanger',
@@ -47,17 +50,17 @@ function createSlug(name: string) {
 
 export default function AccueilScreen() {
   const router = useRouter();
+  const { getSuggestions } = useSearch();
   
   // Search state
   const [query, setQuery] = useState('');
   const [cityQuery, setCityQuery] = useState('Toutes les villes');
   const [selectedCity, setSelectedCity] = useState<string | null>('Toutes les villes');
-  const [showCityList, setShowCityList] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [doctors, setDoctors] = useState<any[]>([]);
-  const [establishments, setEstablishments] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [citySheetVisible, setCitySheetVisible] = useState(false);
 
   // Mock data for dashboard (replace with real API data)
   const mockAppointment = undefined; // Will show empty state
@@ -77,90 +80,60 @@ export default function AccueilScreen() {
     if (u) setUser(u);
   }, []);
 
-  // Fetch doctors/establishments
+  // Build suggestions using backend search
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const usersRes = await apiClient.get('/users');
-        const allUsers: any[] = Array.isArray(usersRes.data?.data) 
-          ? usersRes.data.data 
-          : Array.isArray(usersRes.data) ? usersRes.data : [];
-        
-        const searchableUsers = allUsers.filter((user: any) => {
-          if (!user) return false;
-          const roleName = user.role?.name || user.role || '';
-          const roleId = user.role_id;
-          const roleNameLower = typeof roleName === 'string' ? roleName.toLowerCase() : '';
-          const isPatient = roleId === 1 || roleNameLower.includes('patient');
-          const isAdmin = roleId === 3 || roleNameLower.includes('admin');
-          return !isPatient && !isAdmin;
-        });
-        
-        setDoctors(searchableUsers);
-        setEstablishments(searchableUsers);
-      } catch {
-        setDoctors([]);
-        setEstablishments([]);
-      }
-    };
-    fetchData();
-  }, []);
-
-  // Build suggestions
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      const q = query.trim().toLowerCase();
+    const timeoutId = setTimeout(async () => {
+      const q = query.trim();
       if (!q) {
         setSuggestions([]);
         setShowSuggestions(false);
         return;
       }
 
-      const allUsers = [...establishments, ...doctors];
-      const uniqueUsers = allUsers.filter((user, index, self) => 
-        user && self.findIndex((u) => u && u.id === user.id) === index
-      );
-
-      const matchingUsers = uniqueUsers
-        .filter((user: any) => {
-          if (!user) return false;
-          const firstName = typeof user.prenom === 'string' ? user.prenom.toLowerCase() : '';
-          const lastName = typeof user.nom === 'string' ? user.nom.toLowerCase() : '';
-          const fullName = `${firstName} ${lastName}`.trim();
-          const name = typeof user.name === 'string' ? user.name.toLowerCase() : '';
-          const city = typeof user.ville === 'string' ? user.ville.toLowerCase() : '';
-          return firstName.includes(q) || lastName.includes(q) || fullName.includes(q) || 
-                 name.includes(q) || city.includes(q);
-        })
-        .slice(0, 20)
-        .map((user: any) => {
-          const fullName = `${user.prenom || ''} ${user.nom || ''}`.trim();
-          const finalName = fullName || user.name || 'Professionnel';
-          const specialty = user.specialite || user.specialty || 'Médecine générale';
+      setLoadingSuggestions(true);
+      try {
+        const results = await getSuggestions(q, 15);
+        
+        const formattedSuggestions = results.map((item: any) => {
+          const name = item.name || 'Professionnel';
+          const specialty = item.specialty || item.profile_data?.specialty || 'Médecine générale';
+          const location = item.ville || item.profile_data?.ville || '';
           
           return {
-            id: user.id,
-            name: finalName,
+            id: item.id,
+            name,
             specialty: typeof specialty === 'string' ? specialty : 'Médecine générale',
-            location: user.ville || user.city || '',
-            profile: user,
+            location,
+            profile: item,
           };
         });
 
-      setSuggestions(matchingUsers);
-      setShowSuggestions(matchingUsers.length > 0);
-    }, 150);
+        setSuggestions(formattedSuggestions);
+        setShowSuggestions(formattedSuggestions.length > 0);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        setSuggestions([]);
+        setShowSuggestions(false);
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    }, 300);
     
     return () => clearTimeout(timeoutId);
-  }, [query, doctors, establishments]);
+  }, [query, getSuggestions]);
 
   const onSearch = () => {
     const city = (selectedCity || cityQuery || '').trim();
-    if (city && city.toLowerCase() !== 'toutes les villes') {
-      router.push({ pathname: '/recherche/[city]', params: { city } } as any);
-      return;
-    }
-    router.push('/recherche' as any);
+    const searchQuery = query.trim();
+    
+    // Navigate to search page with parameters
+    router.push({ 
+      pathname: '/recherche', 
+      params: { 
+        query: searchQuery || undefined,
+        city: city && city.toLowerCase() !== 'toutes les villes' ? city : undefined,
+      } 
+    } as any);
   };
 
   const onUseLocation = () => {
@@ -204,102 +177,65 @@ export default function AccueilScreen() {
 
               {showSuggestions && suggestions.length > 0 && (
                 <View style={styles.suggestions}>
-                  <FlatList
-                    data={suggestions}
-                    keyExtractor={(item) => String(item.id)}
-                    keyboardShouldPersistTaps="handled"
-                    renderItem={({ item }) => (
-                      <Pressable
-                        onPress={() => {
-                          try {
-                            const nameSlug = createSlug(item.name);
-                            router.push({ 
-                              pathname: '/recherche/profil/[nameSlug]', 
-                              params: { nameSlug } 
-                            } as any);
-                          } catch {}
-                          setQuery(item.name);
-                          setShowSuggestions(false);
-                        }}
-                        style={styles.suggestionItem}
-                      >
-                        <View style={styles.suggestionIcon}>
-                          <FontAwesome5 name="user-md" size={16} color="#2563EB" />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.suggestionTitle} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-                          <Text style={styles.suggestionSub} numberOfLines={1}>
-                            {item.specialty}
-                          </Text>
-                          {!!item.location && (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                              <Ionicons name="location" size={12} color="#9CA3AF" />
-                              <Text style={styles.suggestionLoc} numberOfLines={1}>
-                                {item.location}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      </Pressable>
-                    )}
-                    ItemSeparatorComponent={() => <View style={styles.divider} />}
-                    style={{ maxHeight: 240 }}
-                  />
+                  <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 240 }}>
+                    {suggestions.map((item, idx) => (
+                      <View key={String(item.id) + '-' + idx}>
+                        <Pressable
+                          onPress={() => {
+                            try {
+                              const nameSlug = createSlug(item.name);
+                              router.push({ 
+                                pathname: '/recherche/profil/[nameSlug]', 
+                                params: { nameSlug } 
+                              } as any);
+                            } catch {}
+                            setQuery(item.name);
+                            setShowSuggestions(false);
+                          }}
+                          style={styles.suggestionItem}
+                        >
+                          <View style={styles.suggestionIcon}>
+                            <FontAwesome5 name="user-md" size={16} color="#2563EB" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.suggestionTitle} numberOfLines={1}>
+                              {item.name}
+                            </Text>
+                            <Text style={styles.suggestionSub} numberOfLines={1}>
+                              {item.specialty}
+                            </Text>
+                            {!!item.location && (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                <Ionicons name="location" size={12} color="#9CA3AF" />
+                                <Text style={styles.suggestionLoc} numberOfLines={1}>
+                                  {item.location}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </Pressable>
+                        {idx < suggestions.length - 1 && <View style={styles.divider} />}
+                      </View>
+                    ))}
+                  </ScrollView>
                 </View>
               )}
             </View>
 
-            {/* City input */}
+            {/* City input -> opens bottom sheet */}
             <View style={[styles.inputWrap, { marginTop: 12 }]}>
               <Ionicons name="location-outline" size={20} color="#6B7280" style={styles.inputIcon} />
-              <TextInput
-                value={cityQuery}
-                onChangeText={(t) => {
-                  setCityQuery(t);
-                  setShowCityList(true);
-                }}
-                onFocus={() => setShowCityList(true)}
-                placeholder="Ville"
-                placeholderTextColor="#9CA3AF"
-                style={styles.textInput}
-                returnKeyType="done"
-              />
-
-              {showCityList && (
-                <View style={styles.suggestions}>
-                  <Pressable
-                    onPress={() => {
-                      setSelectedCity('Toutes les villes');
-                      setCityQuery('Toutes les villes');
-                      setShowCityList(false);
-                    }}
-                    style={[styles.suggestionItem, { paddingVertical: 12 }]}
-                  >
-                    <Text style={styles.suggestionTitle}>Toutes les villes</Text>
-                  </Pressable>
-                  <View style={styles.divider} />
-                  <FlatList
-                    data={filteredCities}
-                    keyExtractor={(item, idx) => `${item}-${idx}`}
-                    keyboardShouldPersistTaps="handled"
-                    renderItem={({ item }) => (
-                      <Pressable
-                        onPress={() => {
-                          setSelectedCity(item);
-                          setCityQuery(item);
-                          setShowCityList(false);
-                        }}
-                        style={[styles.suggestionItem, { paddingVertical: 12 }]}
-                      >
-                        <Text style={styles.suggestionTitle}>{item}</Text>
-                      </Pressable>
-                    )}
-                    style={{ maxHeight: 180 }}
+              <Pressable onPress={() => setCitySheetVisible(true)}>
+                <View pointerEvents="none">
+                  <TextInput
+                    value={cityQuery}
+                    editable={false}
+                    placeholder="Ville"
+                    placeholderTextColor="#9CA3AF"
+                    style={styles.textInput}
                   />
                 </View>
-              )}
+              </Pressable>
             </View>
 
             {/* Search buttons */}
@@ -313,6 +249,19 @@ export default function AccueilScreen() {
               </Pressable>
             </View>
           </View>
+          {/* Quick filter chips */}
+          <FiltersChipRow
+            onSelect={(chip) => {
+              const city = (selectedCity || cityQuery || '').trim();
+              router.push({
+                pathname: '/recherche',
+                params: {
+                  query: chip.label,
+                  city: city && city.toLowerCase() !== 'toutes les villes' ? city : undefined,
+                },
+              } as any);
+            }}
+          />
         </View>
 
         {/* Dashboard Components */}
@@ -353,6 +302,17 @@ export default function AccueilScreen() {
       </ScrollView>
 
       <DevTools />
+      {/* City bottom sheet */}
+      <CityBottomSheet
+        visible={citySheetVisible}
+        cities={MOROCCAN_CITIES}
+        selectedCity={selectedCity || 'Toutes les villes'}
+        onSelect={(city) => {
+          setSelectedCity(city);
+          setCityQuery(city);
+        }}
+        onClose={() => setCitySheetVisible(false)}
+      />
     </SafeAreaView>
   );
 }

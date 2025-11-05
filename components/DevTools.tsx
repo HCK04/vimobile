@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { setAuth, getAuth } from '../lib/api';
 
 const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
 
@@ -40,6 +41,56 @@ export function DevTools() {
     } catch (error) {
       Alert.alert('Error', 'Failed to check status');
     }
+  };
+
+  const skipToAccueil = async () => {
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+      router.replace('/(tabs)/accueil');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to skip to accueil');
+      console.error('Error skipping to accueil:', error);
+    }
+  };
+
+  const mockDoctorLogin = () => {
+    const mockDoctor = {
+      id: 999,
+      name: 'Dr. Test (Dev)',
+      email: 'doctor.test@dev.local',
+      role_id: 2, // Doctor role
+      role: { id: 2, name: 'medecin' },
+    };
+    const mockToken = 'dev-mock-token-' + Date.now();
+    setAuth(mockToken, mockDoctor);
+    Alert.alert(
+      'Mock Login Success',
+      'Logged in as Dr. Test (Dev)\nYou can now access doctor features.',
+      [
+        {
+          text: 'Go to Dashboard',
+          onPress: () => router.push('/doctor/dashboard' as any),
+        },
+        { text: 'OK' },
+      ]
+    );
+  };
+
+  const checkAuthStatus = () => {
+    const { user, token } = getAuth();
+    if (user && token) {
+      Alert.alert(
+        'Auth Status',
+        `Logged in as: ${user.name || user.email || 'Unknown'}\nRole: ${user.role?.name || user.role_id || 'N/A'}`
+      );
+    } else {
+      Alert.alert('Auth Status', 'Not logged in');
+    }
+  };
+
+  const logout = () => {
+    setAuth(null, null);
+    Alert.alert('Logged Out', 'Auth cleared. You can now test login flows.');
   };
 
   const clearAllData = async () => {
@@ -104,6 +155,41 @@ export function DevTools() {
           <Pressable style={styles.button} onPress={() => router.push('/onboarding')}>
             <Ionicons name="eye" size={20} color="#2563EB" />
             <Text style={styles.buttonText}>View Onboarding</Text>
+          </Pressable>
+
+          <Pressable style={[styles.button, { backgroundColor: '#F3F4F6' }]} onPress={skipToAccueil}>
+            <Ionicons name="home" size={20} color="#16A34A" />
+            <Text style={[styles.buttonText, { color: '#16A34A' }]}>Skip to Accueil</Text>
+          </Pressable>
+
+          {/* Auth Testing */}
+          <View style={styles.divider} />
+          <Text style={styles.sectionTitle}>Auth & Doctor Testing</Text>
+          
+          <Pressable style={[styles.button, { backgroundColor: '#EFF6FF' }]} onPress={mockDoctorLogin}>
+            <Ionicons name="person-add" size={20} color="#2563EB" />
+            <Text style={[styles.buttonText, { color: '#2563EB' }]}>Mock Doctor Login</Text>
+          </Pressable>
+
+          <Pressable style={styles.button} onPress={checkAuthStatus}>
+            <Ionicons name="shield-checkmark" size={20} color="#2563EB" />
+            <Text style={styles.buttonText}>Check Auth Status</Text>
+          </Pressable>
+
+          <Pressable style={styles.button} onPress={logout}>
+            <Ionicons name="log-out" size={20} color="#F59E0B" />
+            <Text style={[styles.buttonText, { color: '#F59E0B' }]}>Logout</Text>
+          </Pressable>
+
+          {/* Quick Navigate: Doctor Interfaces */}
+          <Pressable style={styles.button} onPress={() => router.push('/doctor/dashboard' as any)}>
+            <Ionicons name="medkit" size={20} color="#2563EB" />
+            <Text style={styles.buttonText}>Go to Doctor Dashboard</Text>
+          </Pressable>
+
+          <Pressable style={styles.button} onPress={() => router.push('/auth/professional' as any)}>
+            <Ionicons name="log-in" size={20} color="#2563EB" />
+            <Text style={styles.buttonText}>Professional Login</Text>
           </Pressable>
 
           <Pressable style={[styles.button, styles.dangerButton]} onPress={clearAllData}>
@@ -183,5 +269,18 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: '#EF4444',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 12,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
   },
 });

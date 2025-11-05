@@ -35,3 +35,9 @@ type LoggerConfig = {
 
   g.__reanimatedLoggerConfig = config;
 })();
+
+// Provide a no-op default export so Expo Router doesn't warn about missing default export on this route file.
+// This renders nothing and has no side effects; the logger config above is the only effect.
+export default function ReanimatedLoggerRoute() {
+  return null;
+}

@@ -1,15 +1,38 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { getAuth } from './api';
 
-// Align with web api.js but for Expo RN
-const DEFAULT_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ||
-  (__DEV__ ? 'http://localhost:8000/api' : 'https://api.xn--vi-sant-hya.com/api');
+// Resolve base URL for Expo dev (device/emulator) and prod
+function resolveDevBaseUrl(): string | undefined {
+  if (!__DEV__) return undefined;
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+
+  // Try to infer LAN IP from Expo hostUri (e.g., 192.168.x.x:8081)
+  const anyConstants: any = Constants as any;
+  const hostUri: string | undefined =
+    anyConstants?.expoConfig?.hostUri ||
+    anyConstants?.manifest2?.extra?.expoClient?.hostUri ||
+    anyConstants?.manifest?.hostUri ||
+    anyConstants?.manifest?.debuggerHost;
+
+  let host = hostUri ? String(hostUri).split(':')[0] : 'localhost';
+
+  // Android emulator special case
+  if (Platform.OS === 'android') {
+    if (host === 'localhost' || host === '127.0.0.1') host = '10.0.2.2';
+  }
+
+  return `http://${host}:8000/api`;
+}
+
+const DEFAULT_BASE_URL = resolveDevBaseUrl() || 'https://api.xn--vi-sant-hya.com/api';
 
 export const apiClient = axios.create({
   baseURL: DEFAULT_BASE_URL,
   headers: {
     Accept: 'application/json',
+    'X-Client-Type': 'mobile',
   },
 });
 
