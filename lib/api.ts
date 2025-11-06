@@ -127,59 +127,46 @@ export const api = {
     contact_urgence?: string;
     rdv_patients_suivis_uniquement?: boolean;
   }) => {
-    const fd = new FormData();
-    fd.append('name', payload.name);
-    fd.append('email', payload.email);
-    fd.append('password', payload.password);
-    fd.append('password_confirmation', payload.password_confirmation || payload.password);
-    fd.append('phone', payload.phone);
-    fd.append('role_id', String(payload.role_id));
-
+    // Use JSON instead of FormData to avoid network issues on React Native
     // specialty with "Autres"
     let specialties = Array.isArray(payload.specialty) ? [...payload.specialty] : [];
     if (specialties.includes('Autres') && payload.other_specialty) {
       specialties = specialties.filter((s) => s !== 'Autres');
       specialties.push(payload.other_specialty);
     }
-    if (specialties.length) fd.append('specialty', JSON.stringify(specialties));
 
-    if (payload.experience_years !== undefined) fd.append('experience_years', String(payload.experience_years));
-    if (payload.horaire_start) fd.append('horaire_start', payload.horaire_start);
-    if (payload.horaire_end) fd.append('horaire_end', payload.horaire_end);
-    if (payload.presentation) fd.append('presentation', payload.presentation);
-    if (payload.adresse) fd.append('adresse', payload.adresse);
-    if (payload.ville) fd.append('ville', payload.ville);
-    if (payload.numero_carte_professionnelle) fd.append('numero_carte_professionnelle', payload.numero_carte_professionnelle);
-    if (payload.carte_professionnelle_file) fd.append('carte_professionnelle', payload.carte_professionnelle_file as any);
-
-    // CV arrays as JSON strings like web
-    try {
-      const diplList = Array.isArray(payload.diplomes) ? payload.diplomes : [];
-      fd.append('diplomes', JSON.stringify(diplList));
-    } catch { fd.append('diplomes', JSON.stringify([])); }
-    try {
-      const expList = Array.isArray(payload.experiences) ? payload.experiences : [];
-      fd.append('experiences', JSON.stringify(expList));
-    } catch { fd.append('experiences', JSON.stringify([])); }
-
-    if (payload.org_presentation) fd.append('org_presentation', payload.org_presentation);
-    if (payload.services_description) fd.append('services_description', payload.services_description);
-    if (payload.additional_info) fd.append('additional_info', payload.additional_info);
-    if (payload.informations_pratiques) fd.append('informations_pratiques', payload.informations_pratiques);
-    if (payload.contact_urgence) fd.append('contact_urgence', payload.contact_urgence);
-    if (payload.rdv_patients_suivis_uniquement !== undefined) {
-      fd.append('rdv_patients_suivis_uniquement', payload.rdv_patients_suivis_uniquement ? '1' : '0');
-    }
-
-    // Arrays sent as repeated keys for new fields
-    (payload.moyens_paiement || []).forEach((v, i) => fd.append(`moyens_paiement[${i}]`, v));
-    (payload.moyens_transport || []).forEach((v, i) => fd.append(`moyens_transport[${i}]`, v));
-    (payload.jours_disponibles || []).forEach((v, i) => fd.append(`jours_disponibles[${i}]`, v));
+    const body = {
+      name: payload.name,
+      email: payload.email,
+      password: payload.password,
+      password_confirmation: payload.password_confirmation || payload.password,
+      phone: payload.phone,
+      role_id: payload.role_id,
+      ...(specialties.length > 0 ? { specialty: specialties } : {}),
+      ...(payload.experience_years !== undefined ? { experience_years: payload.experience_years } : {}),
+      ...(payload.horaire_start ? { horaire_start: payload.horaire_start } : {}),
+      ...(payload.horaire_end ? { horaire_end: payload.horaire_end } : {}),
+      ...(payload.presentation ? { presentation: payload.presentation } : {}),
+      ...(payload.adresse ? { adresse: payload.adresse } : {}),
+      ...(payload.ville ? { ville: payload.ville } : {}),
+      ...(payload.numero_carte_professionnelle ? { numero_carte_professionnelle: payload.numero_carte_professionnelle } : {}),
+      diplomes: Array.isArray(payload.diplomes) ? payload.diplomes : [],
+      experiences: Array.isArray(payload.experiences) ? payload.experiences : [],
+      ...(payload.org_presentation ? { org_presentation: payload.org_presentation } : {}),
+      ...(payload.services_description ? { services_description: payload.services_description } : {}),
+      ...(payload.additional_info ? { additional_info: payload.additional_info } : {}),
+      ...(payload.informations_pratiques ? { informations_pratiques: payload.informations_pratiques } : {}),
+      ...(payload.contact_urgence ? { contact_urgence: payload.contact_urgence } : {}),
+      ...(payload.rdv_patients_suivis_uniquement !== undefined ? { rdv_patients_suivis_uniquement: payload.rdv_patients_suivis_uniquement } : {}),
+      moyens_paiement: payload.moyens_paiement || [],
+      moyens_transport: payload.moyens_transport || [],
+      jours_disponibles: payload.jours_disponibles || [],
+    };
 
     const data = await request('/register', {
       method: 'POST',
-      headers: { Accept: 'application/json' },
-      body: fd as any,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body,
     });
     setAuth(data.token, data.user);
     return data;
@@ -263,5 +250,131 @@ export const api = {
     });
     setAuth(data.token, data.user);
     return data;
+  },
+
+  // Patient appointment booking
+  getAvailableHours: async (doctorId: string | number, date?: string) => {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    return request(`/doctors/${doctorId}/available-hours${qs}`, { method: 'GET' });
+  },
+
+  getBookedSlots: async (doctorId: string | number, date: string) => {
+    return request(`/appointments/booked-slots/${doctorId}?date=${encodeURIComponent(date)}`, { method: 'GET' });
+  },
+
+  createAppointment: async (payload: any) => {
+    // Map to backend contract
+    if (payload?.target_user_id) {
+      // Doctor appointment
+      const body: any = {
+        target_user_id: Number(payload.target_user_id),
+        target_role: payload.target_role || 'medecin',
+        date_time: payload.date_time || `${payload.date} ${payload.time}`,
+        reason: payload.reason,
+      };
+      if (payload.patient_name) body.patient_name = payload.patient_name;
+      if (payload.patient_phone) body.patient_phone = payload.patient_phone;
+      if (payload.patient_email) body.patient_email = payload.patient_email;
+      if (payload.announcement_id) body.announcement_id = payload.announcement_id;
+      if (payload.notes) body.notes = payload.notes;
+      return request('/patient/appointments', { method: 'POST', body });
+    }
+    if (payload?.organization_id) {
+      // Organization appointment
+      const body: any = {
+        organization_id: Number(payload.organization_id),
+        date: payload.date,
+        time: payload.time,
+        reason: payload.reason,
+        patientName: payload.patientName || payload.patient_name,
+        patientPhone: payload.patientPhone || payload.patient_phone,
+        patientEmail: payload.patientEmail || payload.patient_email,
+      };
+      return request('/patient/appointments', { method: 'POST', body });
+    }
+    // Fallback: send as-is
+    return request('/patient/appointments', { method: 'POST', body: payload });
+  },
+
+  updateAppointment: async (
+    id: string | number,
+    payload: { date: string; time: string; reason?: string }
+  ) => {
+    return request(`/appointments/${id}`, { method: 'PUT', body: payload });
+  },
+
+  cancelAppointment: async (id: string | number) => {
+    return request(`/appointments/${id}/cancel`, { method: 'POST' });
+  },
+
+  // Professional profile management
+  getProfessionalProfile: async () => {
+    return request('/professional/profile', { method: 'GET' });
+  },
+
+  updateProfessionalProfile: async (payload: any) => {
+    return request('/professional/profile/update', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  updateProfessionalImage: async (imageFile: any) => {
+    const fd = new FormData();
+    fd.append('image', imageFile);
+    return request('/professional/profile/update-image', {
+      method: 'POST',
+      body: fd,
+    });
+  },
+
+  toggleAvailability: async (disponible: boolean) => {
+    return request('/professional/profile/toggle-availability', {
+      method: 'POST',
+      body: { disponible },
+    });
+  },
+
+  setAbsence: async (payload: { start_date: string; end_date: string; reason?: string }) => {
+    return request('/professional/profile/set-absence', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  toggleVacationMode: async (vacation_mode: boolean) => {
+    return request('/professional/profile/toggle-vacation-mode', {
+      method: 'POST',
+      body: { vacation_mode },
+    });
+  },
+
+  // Doctor appointments management
+  getDoctorAppointments: async () => {
+    return request('/doctor/appointments', { method: 'GET' });
+  },
+
+  getDoctorAppointmentDetails: async (id: string | number) => {
+    return request(`/doctor/appointments/${id}`, { method: 'GET' });
+  },
+
+  updateAppointmentStatus: async (id: string | number, status: string) => {
+    return request(`/doctor/appointments/${id}/status`, {
+      method: 'PUT',
+      body: { status },
+    });
+  },
+
+  // Notifications
+  getNotifications: async () => {
+    return request('/notifications', { method: 'GET' });
+  },
+
+  markNotificationAsRead: async (id: string | number) => {
+    return request(`/notifications/${id}/read`, { method: 'PUT' });
+  },
+
+  markAllNotificationsAsRead: async () => {
+    return request('/notifications/read-all', { method: 'PUT' });
   },
 };

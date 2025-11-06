@@ -3,7 +3,7 @@ import { View, Text, ActivityIndicator, StyleSheet, Pressable, ScrollView } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { apiClient } from '../../../lib/apiClient';
+import { apiClient } from '../../lib/apiClient';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -98,8 +98,6 @@ export default function ProfileScreen() {
   );
 
   const name = entity.name || entity.nom_clinique || entity.nom_pharmacie || entity.nom_parapharmacie || entity.nom_labo || entity.nom_centre || 'Profil';
-  const roleName = String(entity.role || entity.type || entity.profile_data?.type || '').toLowerCase();
-  const isOrganization = entity.isOrganization || ['clinique','pharmacie','parapharmacie','labo_analyse','centre_radiologie','organization'].includes(roleName);
   const ville = entity.ville || entity.profile_data?.ville || '';
   const specialty = entity.specialty ? (Array.isArray(entity.specialty) ? entity.specialty.join(', ') : String(entity.specialty)) : '';
   const services = entity.services ? (Array.isArray(entity.services) ? entity.services.join(', ') : String(entity.services)) : '';
@@ -186,13 +184,7 @@ export default function ProfileScreen() {
         {/* Action Buttons */}
         {entity.id && (
           <Pressable 
-            onPress={() => {
-              if (isOrganization) {
-                router.push({ pathname: '/organization/[id]', params: { id: String(entity.id) } } as any);
-              } else {
-                router.push({ pathname: '/patient/book-appointment', params: { doctorId: String(entity.id), doctorName: name } } as any);
-              }
-            }} 
+            onPress={() => router.push({ pathname: '/patient/book-appointment', params: { doctorId: String(entity.id), doctorName: name } } as any)} 
             style={styles.cta}
           >
             <Ionicons name="calendar" size={20} color="#FFFFFF" />

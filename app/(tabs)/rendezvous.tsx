@@ -10,6 +10,7 @@ export default function RendezVousScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [filter, setFilter] = useState<'all' | 'upcoming' | 'past'>('all');
 
   const loadAppointments = useCallback(async (showLoader = true) => {
     try {
@@ -41,6 +42,16 @@ export default function RendezVousScreen() {
     loadAppointments(false);
   };
 
+  const filteredAppointments = (() => {
+    if (filter === 'all') return appointments;
+    const now = new Date();
+    return appointments.filter((a) => {
+      if (!a?.date || !a?.time) return true;
+      const dt = new Date(`${a.date}T${a.time}:00`);
+      return filter === 'upcoming' ? dt >= now : dt < now;
+    });
+  })();
+
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
@@ -52,7 +63,9 @@ export default function RendezVousScreen() {
     switch (status?.toLowerCase()) {
       case 'confirmed': return { bg: '#D1FAE5', text: '#10B981', label: 'Confirmé' };
       case 'pending': return { bg: '#FEF3C7', text: '#F59E0B', label: 'En attente' };
-      case 'cancelled': return { bg: '#FEE2E2', text: '#EF4444', label: 'Annulé' };
+      case 'cancelled':
+      case 'canceled': return { bg: '#FEE2E2', text: '#EF4444', label: 'Annulé' };
+      case 'scheduled': return { bg: '#DBEAFE', text: '#3B82F6', label: 'Planifié' };
       case 'completed': return { bg: '#DBEAFE', text: '#3B82F6', label: 'Terminé' };
       case 'missed': return { bg: '#F3F4F6', text: '#6B7280', label: 'Manqué' };
       default: return { bg: '#F3F4F6', text: '#6B7280', label: status };
@@ -76,7 +89,7 @@ export default function RendezVousScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Mes rendez-vous</Text>
-        <Pressable style={styles.addBtn} onPress={() => router.push('/recherche')}>
+        <Pressable style={styles.addBtn} onPress={() => router.push('/patient/book-appointment' as any)}>
           <Ionicons name="add" size={20} color="#fff" />
           <Text style={styles.addText}>Nouveau</Text>
         </Pressable>
@@ -88,20 +101,31 @@ export default function RendezVousScreen() {
           title="Aucun rendez-vous"
           description="Prenez votre premier rendez-vous en quelques clics"
           primaryAction={{
-            label: "Rechercher un médecin",
-            icon: "search",
-            onPress: () => router.push('/recherche'),
+            label: "Prendre rendez-vous",
+            icon: "add-circle",
+            onPress: () => router.push('/patient/book-appointment' as any),
           }}
           secondaryAction={{
-            label: "Comment ça marche ?",
-            onPress: () => {
-              // Could show a modal or navigate to help
-            },
+            label: "Rechercher un médecin",
+            onPress: () => router.push('/recherche' as any),
           }}
         />
       ) : (
         <FlatList
-          data={appointments}
+          ListHeaderComponent={
+            <View style={styles.filterBar}>
+              <Pressable onPress={() => setFilter('all')} style={[styles.filterChip, filter === 'all' && styles.filterChipActive]}>
+                <Text style={[styles.filterChipText, filter === 'all' && styles.filterChipTextActive]}>Tous</Text>
+              </Pressable>
+              <Pressable onPress={() => setFilter('upcoming')} style={[styles.filterChip, filter === 'upcoming' && styles.filterChipActive]}>
+                <Text style={[styles.filterChipText, filter === 'upcoming' && styles.filterChipTextActive]}>À venir</Text>
+              </Pressable>
+              <Pressable onPress={() => setFilter('past')} style={[styles.filterChip, filter === 'past' && styles.filterChipActive]}>
+                <Text style={[styles.filterChipText, filter === 'past' && styles.filterChipTextActive]}>Passés</Text>
+              </Pressable>
+            </View>
+          }
+          data={filteredAppointments}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={{ padding: 16, gap: 12 }}
           refreshControl={
@@ -190,5 +214,31 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  filterBar: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  filterChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  filterChipActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
   },
 });

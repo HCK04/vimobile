@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, Modal, TouchableWithoutFeedback, FlatList, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../lib/api';
+import { getPostAuthRoute } from '../../lib/authHelpers';
 
 const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
 
@@ -26,6 +27,26 @@ const roleMap: Record<string, { id: number; title: string }[]> = {
 const PAYMENT_OPTIONS = ['Espèces', 'Cartes bancaires', 'Chèques', 'Virements', 'Paiement mobile'];
 const TRANSPORT_OPTIONS = ['Métro', 'Bus', 'Tramway', 'Parking public', 'Parking privé', 'Station de taxi', 'Vélib/Vélos en libre-service'];
 const DAYS_OPTIONS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+// Simplified list of Moroccan cities for selection (can be extended or fetched later)
+const CITIES = [
+  'Casablanca','Rabat','Fès','Marrakech','Tanger','Agadir','Meknès','Oujda','Kénitra','Tétouan',
+  'Safi','El Jadida','Nador','Béni Mellal','Khouribga','Taza','Mohammédia','Guelmim','Laâyoune','Dakhla'
+];
+
+// Generate 24h time slots in 15-min increments
+const generateTimes = () => {
+  const t: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      const hh = String(h).padStart(2, '0');
+      const mm = String(m).padStart(2, '0');
+      t.push(`${hh}:${mm}`);
+    }
+  }
+  return t;
+};
+const TIMES = generateTimes();
 
 const specialtyOptions = {
   Médecin: [
@@ -94,6 +115,22 @@ const serviceOptions = {
   ],
 };
 
+// Validation helpers
+const validatePassword = (pwd: string) => {
+  return {
+    length: pwd.length >= 8,
+    uppercase: /[A-Z]/.test(pwd),
+    lowercase: /[a-z]/.test(pwd),
+    number: /\d/.test(pwd),
+    special: /[@$!%*?&]/.test(pwd),
+  };
+};
+
+const validatePhone = (phone: string) => {
+  // Moroccan phone format: 06XXXXXXXX or 07XXXXXXXX
+  return /^0[67]\d{8}$/.test(phone);
+};
+
 export default function ProfessionalAuthScreen() {
   const router = useRouter();
   const [tab, setTab] = useState<'login' | 'register'>('register');
@@ -104,11 +141,14 @@ export default function ProfessionalAuthScreen() {
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword2, setShowPassword2] = useState(false);
 
   const [category, setCategory] = useState<'professionnel_sante' | 'organisation' | ''>('');
   const [roleTitle, setRoleTitle] = useState<string>('');
@@ -143,6 +183,23 @@ export default function ProfessionalAuthScreen() {
   const [joursDisponibles, setJoursDisponibles] = useState<string[]>([]);
   const [rdvSuivisUniquement, setRdvSuivisUniquement] = useState(false);
 
+  // Selectors state
+  const [cityModalVisible, setCityModalVisible] = useState(false);
+  const [cityQuery, setCityQuery] = useState('');
+  const filteredCities = useMemo(() => {
+    const q = cityQuery.trim().toLowerCase();
+    if (!q) return CITIES;
+    return CITIES.filter(c => c.toLowerCase().includes(q));
+  }, [cityQuery]);
+  const [timeModalVisible, setTimeModalVisible] = useState(false);
+  const [timePicking, setTimePicking] = useState<'' | 'start' | 'end'>('');
+
+  // Validation states
+  const passwordValidation = useMemo(() => validatePassword(password), [password]);
+  const isPasswordValid = useMemo(() => Object.values(passwordValidation).every(v => v), [passwordValidation]);
+  const isPhoneValid = useMemo(() => validatePhone(phone), [phone]);
+  const isEmailValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), [email]);
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
@@ -160,6 +217,17 @@ export default function ProfessionalAuthScreen() {
     setArr(has ? next.filter((x) => x !== val) : [...next, val]);
   };
 
+  // Selector helpers
+  const openCityModal = () => { setCityQuery(''); setCityModalVisible(true); };
+  const selectCity = (c: string) => { setVille(c); setCityModalVisible(false); };
+  const openTimeModal = (which: 'start' | 'end') => { setTimePicking(which); setTimeModalVisible(true); };
+  const selectTime = (t: string) => {
+    if (timePicking === 'start') setHoraireStart(t);
+    if (timePicking === 'end') setHoraireEnd(t);
+    setTimeModalVisible(false);
+    setTimePicking('');
+  };
+
   const onLogin = async () => {
     if (!loginEmail || !loginPassword) {
       Alert.alert('Connexion', 'Veuillez saisir votre email et mot de passe.');
@@ -170,10 +238,8 @@ export default function ProfessionalAuthScreen() {
       const res = await api.login({ email: loginEmail, password: loginPassword });
       // Mark onboarding as completed
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-      const roleName = res?.user?.role?.name || res?.user?.role_name || '';
-      if (['medecin', 'kine', 'orthophoniste', 'psychologue'].includes(roleName)) router.replace('/(tabs)/profil');
-      else if (['clinique', 'pharmacie', 'parapharmacie', 'labo_analyse', 'centre_radiologie'].includes(roleName)) router.replace('/(tabs)/profil');
-      else router.replace('/(tabs)/accueil');
+      const route = getPostAuthRoute(res?.user || {});
+      router.replace(route as any);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || 'Une erreur est survenue';
       Alert.alert('Connexion', msg);
@@ -184,14 +250,11 @@ export default function ProfessionalAuthScreen() {
 
   const validateStep1 = () => {
     if (!email) { Alert.alert('Étape 1', 'Email requis.'); return false; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { Alert.alert('Étape 1', 'Email invalide.'); return false; }
+    if (!isEmailValid) { Alert.alert('Étape 1', 'Email invalide.'); return false; }
     if (!phone) { Alert.alert('Étape 1', 'Téléphone requis.'); return false; }
+    if (!isPhoneValid) { Alert.alert('Étape 1', 'Format de téléphone invalide. Utilisez le format: 06XXXXXXXX ou 07XXXXXXXX'); return false; }
     if (!password || !password2) { Alert.alert('Étape 1', 'Mot de passe et confirmation requis.'); return false; }
-    if (password.length < 8) { Alert.alert('Étape 1', 'Le mot de passe doit contenir au moins 8 caractères.'); return false; }
-    if (!/[a-z]/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir une lettre minuscule.'); return false; }
-    if (!/[A-Z]/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir une lettre majuscule.'); return false; }
-    if (!/\d/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir un chiffre.'); return false; }
-    if (!/[@$!%*?&]/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir un caractère spécial (@$!%*?&).'); return false; }
+    if (!isPasswordValid) { Alert.alert('Étape 1', 'Le mot de passe ne respecte pas les critères de sécurité.'); return false; }
     if (password !== password2) { Alert.alert('Étape 1', 'Les mots de passe ne correspondent pas.'); return false; }
     return true;
   };
@@ -294,8 +357,8 @@ export default function ProfessionalAuthScreen() {
         });
         // Mark onboarding as completed
         await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-        const roleName = data?.user?.role?.name || data?.user?.role_name || '';
-        if (['medecin','kine','orthophoniste','psychologue'].includes(roleName)) router.replace('/(tabs)/profil'); else router.replace('/(tabs)/accueil');
+        const route = getPostAuthRoute(data?.user || { role_id }, category);
+        router.replace(route as any);
       } else {
         const srv = services.includes('Autres') && otherService ? services.filter((s) => s !== 'Autres').concat(otherService) : services;
         const data = await api.registerOrganization({
@@ -326,8 +389,8 @@ export default function ProfessionalAuthScreen() {
         });
         // Mark onboarding as completed
         await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-        const roleName = data?.user?.role?.name || data?.user?.role_name || '';
-        if (['clinique','pharmacie','parapharmacie','labo_analyse','centre_radiologie'].includes(roleName)) router.replace('/(tabs)/profil'); else router.replace('/(tabs)/accueil');
+        const route = getPostAuthRoute(data?.user || { role_id }, category);
+        router.replace(route as any);
       }
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || 'Une erreur est survenue';
@@ -344,8 +407,9 @@ export default function ProfessionalAuthScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0} style={{ flex: 1 }}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
             <View style={styles.brandLeft}>
               <Ionicons name="medkit" size={24} color="#2563EB" />
@@ -367,11 +431,35 @@ export default function ProfessionalAuthScreen() {
             <View style={styles.card}>
               <View style={styles.formRow}>
                 <Text style={styles.label}>Email</Text>
-                <TextInput value={loginEmail} onChangeText={setLoginEmail} autoCapitalize="none" keyboardType="email-address" placeholder="vous@exemple.com" placeholderTextColor="#9CA3AF" style={styles.input} />
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                  <TextInput 
+                    value={loginEmail} 
+                    onChangeText={setLoginEmail} 
+                    autoCapitalize="none" 
+                    keyboardType="email-address" 
+                    placeholder="vous@exemple.com" 
+                    placeholderTextColor="#9CA3AF" 
+                    style={styles.inputWithIcon} 
+                  />
+                </View>
               </View>
               <View style={styles.formRow}>
                 <Text style={styles.label}>Mot de passe</Text>
-                <TextInput value={loginPassword} onChangeText={setLoginPassword} secureTextEntry placeholder="••••••••" placeholderTextColor="#9CA3AF" style={styles.input} />
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                  <TextInput 
+                    value={loginPassword} 
+                    onChangeText={setLoginPassword} 
+                    secureTextEntry={!showLoginPassword}
+                    placeholder="••••••••" 
+                    placeholderTextColor="#9CA3AF" 
+                    style={styles.inputWithIcon} 
+                  />
+                  <Pressable onPress={() => setShowLoginPassword(!showLoginPassword)} style={styles.eyeIcon}>
+                    <Ionicons name={showLoginPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#9CA3AF" />
+                  </Pressable>
+                </View>
               </View>
               <Pressable disabled={loading} onPress={onLogin} style={[styles.primaryBtn, loading && { opacity: 0.7 }]}>
                 <Text style={styles.primaryBtnText}>{loading ? 'Connexion...' : 'Se connecter'}</Text>
@@ -402,12 +490,108 @@ export default function ProfessionalAuthScreen() {
               <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
                 {step === 1 && (
                   <View>
-                    <View style={styles.formRow}><Text style={styles.label}>Email</Text><TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="vous@exemple.com" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
-                    <View style={styles.formRow}><Text style={styles.label}>Téléphone</Text><TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="06XXXXXXXX" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
-                    <View style={styles.twoCols}>
-                      <View style={{ flex: 1 }}><Text style={styles.label}>Mot de passe</Text><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
-                      <View style={{ width: 12 }} />
-                      <View style={{ flex: 1 }}><Text style={styles.label}>Confirmation</Text><TextInput value={password2} onChangeText={setPassword2} secureTextEntry placeholder="••••••••" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
+                    {/* Email */}
+                    <View style={styles.formRow}>
+                      <Text style={styles.label}>Email</Text>
+                      <View style={[styles.inputContainer, email && !isEmailValid && styles.inputError, email && isEmailValid && styles.inputSuccess]}>
+                        <Ionicons name="mail-outline" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                        <TextInput 
+                          value={email} 
+                          onChangeText={setEmail} 
+                          autoCapitalize="none" 
+                          keyboardType="email-address" 
+                          placeholder="vous@exemple.com" 
+                          placeholderTextColor="#9CA3AF" 
+                          style={styles.inputWithIcon} 
+                        />
+                        {email && isEmailValid && <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.validationIcon} />}
+                      </View>
+                      {email && !isEmailValid && <Text style={styles.helperError}>Email invalide</Text>}
+                    </View>
+
+                    {/* Phone */}
+                    <View style={styles.formRow}>
+                      <Text style={styles.label}>Téléphone</Text>
+                      <View style={[styles.inputContainer, phone && !isPhoneValid && styles.inputError, phone && isPhoneValid && styles.inputSuccess]}>
+                        <Ionicons name="call-outline" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                        <TextInput 
+                          value={phone} 
+                          onChangeText={setPhone} 
+                          keyboardType="phone-pad" 
+                          placeholder="06XXXXXXXX" 
+                          placeholderTextColor="#9CA3AF" 
+                          style={styles.inputWithIcon}
+                          maxLength={10}
+                        />
+                        {phone && isPhoneValid && <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.validationIcon} />}
+                      </View>
+                      <Text style={styles.helper}>Format: 06XXXXXXXX ou 07XXXXXXXX</Text>
+                      {phone && !isPhoneValid && <Text style={styles.helperError}>Format invalide</Text>}
+                    </View>
+
+                    {/* Password */}
+                    <View style={styles.formRow}>
+                      <Text style={styles.label}>Mot de passe</Text>
+                      <View style={[styles.inputContainer, password && !isPasswordValid && styles.inputError, password && isPasswordValid && styles.inputSuccess]}>
+                        <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                        <TextInput 
+                          value={password} 
+                          onChangeText={setPassword} 
+                          secureTextEntry={!showPassword}
+                          placeholder="••••••••" 
+                          placeholderTextColor="#9CA3AF" 
+                          style={styles.inputWithIcon} 
+                        />
+                        <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                          <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#9CA3AF" />
+                        </Pressable>
+                      </View>
+                      {password && (
+                        <View style={styles.passwordRequirements}>
+                          <Text style={styles.requirementsTitle}>Le mot de passe doit contenir:</Text>
+                          <View style={styles.requirementItem}>
+                            <Ionicons name={passwordValidation.length ? "checkmark-circle" : "close-circle"} size={16} color={passwordValidation.length ? "#10B981" : "#EF4444"} />
+                            <Text style={[styles.requirementText, passwordValidation.length && styles.requirementMet]}>Au moins 8 caractères</Text>
+                          </View>
+                          <View style={styles.requirementItem}>
+                            <Ionicons name={passwordValidation.uppercase ? "checkmark-circle" : "close-circle"} size={16} color={passwordValidation.uppercase ? "#10B981" : "#EF4444"} />
+                            <Text style={[styles.requirementText, passwordValidation.uppercase && styles.requirementMet]}>Une lettre majuscule</Text>
+                          </View>
+                          <View style={styles.requirementItem}>
+                            <Ionicons name={passwordValidation.lowercase ? "checkmark-circle" : "close-circle"} size={16} color={passwordValidation.lowercase ? "#10B981" : "#EF4444"} />
+                            <Text style={[styles.requirementText, passwordValidation.lowercase && styles.requirementMet]}>Une lettre minuscule</Text>
+                          </View>
+                          <View style={styles.requirementItem}>
+                            <Ionicons name={passwordValidation.number ? "checkmark-circle" : "close-circle"} size={16} color={passwordValidation.number ? "#10B981" : "#EF4444"} />
+                            <Text style={[styles.requirementText, passwordValidation.number && styles.requirementMet]}>Un chiffre</Text>
+                          </View>
+                          <View style={styles.requirementItem}>
+                            <Ionicons name={passwordValidation.special ? "checkmark-circle" : "close-circle"} size={16} color={passwordValidation.special ? "#10B981" : "#EF4444"} />
+                            <Text style={[styles.requirementText, passwordValidation.special && styles.requirementMet]}>Un caractère spécial (@$!%*?&)</Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Password Confirmation */}
+                    <View style={styles.formRow}>
+                      <Text style={styles.label}>Confirmation du mot de passe</Text>
+                      <View style={[styles.inputContainer, password2 && password !== password2 && styles.inputError, password2 && password === password2 && styles.inputSuccess]}>
+                        <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                        <TextInput 
+                          value={password2} 
+                          onChangeText={setPassword2} 
+                          secureTextEntry={!showPassword2}
+                          placeholder="••••••••" 
+                          placeholderTextColor="#9CA3AF" 
+                          style={styles.inputWithIcon} 
+                        />
+                        <Pressable onPress={() => setShowPassword2(!showPassword2)} style={styles.eyeIcon}>
+                          <Ionicons name={showPassword2 ? "eye-outline" : "eye-off-outline"} size={20} color="#9CA3AF" />
+                        </Pressable>
+                      </View>
+                      {password2 && password !== password2 && <Text style={styles.helperError}>Les mots de passe ne correspondent pas</Text>}
+                      {password2 && password === password2 && <Text style={styles.helperSuccess}>✓ Les mots de passe correspondent</Text>}
                     </View>
                   </View>
                 )}
@@ -443,14 +627,35 @@ export default function ProfessionalAuthScreen() {
                       <View>
                         <View style={styles.formRow}><Text style={styles.label}>Nom</Text><TextInput value={name} onChangeText={setName} placeholder="Votre nom" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
                         <View style={styles.twoCols}>
-                          <View style={{ flex: 1 }}><Text style={styles.label}>Adresse</Text><TextInput value={adresse} onChangeText={setAdresse} placeholder="Adresse" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Adresse</Text>
+                            <TextInput value={adresse} onChangeText={setAdresse} placeholder="Adresse" placeholderTextColor="#9CA3AF" style={styles.input} />
+                          </View>
                           <View style={{ width: 12 }} />
-                          <View style={{ flex: 1 }}><Text style={styles.label}>Ville</Text><TextInput value={ville} onChangeText={setVille} placeholder="Ville" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Ville</Text>
+                            <Pressable onPress={openCityModal} style={[styles.input, styles.selectRow]}>
+                              <Text style={[styles.selectText, !ville && { color: '#9CA3AF' }]}>{ville || 'Choisir une ville'}</Text>
+                              <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
+                            </Pressable>
+                          </View>
                         </View>
                         <View style={styles.twoCols}>
-                          <View style={{ flex: 1 }}><Text style={styles.label}>Heure début</Text><TextInput value={horaireStart} onChangeText={setHoraireStart} placeholder="08:00" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Heure début</Text>
+                            <Pressable onPress={() => openTimeModal('start')} style={[styles.input, styles.selectRow]}>
+                              <Text style={styles.selectText}>{horaireStart || 'Choisir'}</Text>
+                              <Ionicons name="time-outline" size={18} color="#9CA3AF" />
+                            </Pressable>
+                          </View>
                           <View style={{ width: 12 }} />
-                          <View style={{ flex: 1 }}><Text style={styles.label}>Heure fin</Text><TextInput value={horaireEnd} onChangeText={setHoraireEnd} placeholder="18:00" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Heure fin</Text>
+                            <Pressable onPress={() => openTimeModal('end')} style={[styles.input, styles.selectRow]}>
+                              <Text style={styles.selectText}>{horaireEnd || 'Choisir'}</Text>
+                              <Ionicons name="time-outline" size={18} color="#9CA3AF" />
+                            </Pressable>
+                          </View>
                         </View>
                         <View style={styles.formRow}><Text style={styles.label}>Numéro de carte professionnelle</Text><TextInput value={numeroCarte} onChangeText={setNumeroCarte} placeholder="Numéro" placeholderTextColor="#9CA3AF" style={styles.input} /></View>
                         <Text style={styles.label}>Spécialités</Text>
@@ -604,8 +809,74 @@ export default function ProfessionalAuthScreen() {
             </View>
             <Text style={{ color: '#6B7280', fontSize: 12 }}>&copy; 2025 Vi-Santé. Tous droits réservés.</Text>
           </View>
-        </ScrollView>
+          </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
+      {/* City Selector Modal */}
+      <Modal
+        visible={cityModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCityModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setCityModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Choisir une ville</Text>
+                <TextInput
+                  value={cityQuery}
+                  onChangeText={setCityQuery}
+                  placeholder="Rechercher..."
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.modalSearch}
+                />
+                <FlatList
+                  data={filteredCities}
+                  keyExtractor={(item) => item}
+                  renderItem={({ item }) => (
+                    <Pressable onPress={() => selectCity(item)} style={styles.modalListItem}>
+                      <Text style={styles.modalListItemText}>{item}</Text>
+                    </Pressable>
+                  )}
+                />
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Time Selector Modal */}
+      <Modal
+        visible={timeModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTimeModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setTimeModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>
+                  {timePicking === 'start' ? "Heure de début" : timePicking === 'end' ? "Heure de fin" : "Sélectionner l'heure"}
+                </Text>
+                <FlatList
+                  data={TIMES}
+                  initialNumToRender={48}
+                  keyExtractor={(item) => item}
+                  renderItem={({ item }) => (
+                    <Pressable onPress={() => selectTime(item)} style={styles.modalListItem}>
+                      <Text style={styles.modalListItemText}>{item}</Text>
+                    </Pressable>
+                  )}
+                />
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -648,4 +919,147 @@ const styles = StyleSheet.create({
   stepperConnectorActive: { backgroundColor: '#93C5FD' },
   progressOuter: { height: 6, backgroundColor: '#EEF2FF', borderRadius: 999, overflow: 'hidden' },
   progressInner: { height: '100%', backgroundColor: '#2563EB' },
+  
+  // New input styles with icons
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  inputError: {
+    borderColor: '#EF4444',
+    borderWidth: 2,
+  },
+  inputSuccess: {
+    borderColor: '#10B981',
+    borderWidth: 2,
+  },
+  inputWithIcon: {
+    flex: 1,
+    fontSize: 16,
+    color: '#111827',
+    marginLeft: 8,
+    paddingVertical: 0,
+  },
+  inputIcon: {
+    marginRight: 4,
+  },
+  eyeIcon: {
+    padding: 4,
+    marginLeft: 4,
+  },
+  validationIcon: {
+    marginLeft: 8,
+  },
+  
+  // Helper text styles
+  helper: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  helperError: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 4,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  helperSuccess: {
+    fontSize: 12,
+    color: '#10B981',
+    marginTop: 4,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  
+  // Password requirements styles
+  passwordRequirements: {
+    marginTop: 8,
+    padding: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  requirementsTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  requirementItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 8,
+  },
+  requirementText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  requirementMet: {
+    color: '#10B981',
+    fontWeight: '500',
+  },
+  // Selectors
+  selectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  selectText: {
+    color: '#111827',
+  },
+  // Modals
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '70%',
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E5E7EB',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 10,
+  },
+  modalSearch: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#111827',
+    marginBottom: 10,
+  },
+  modalListItem: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalListItemText: {
+    color: '#111827',
+    fontWeight: '600',
+  },
 });

@@ -6,7 +6,7 @@ export default function PatientHomeScreen() {
   return (
     <View style={{ padding: 16 }}>
       <Text style={styles.title}>Espace Patient</Text>
-      <Pressable onPress={() => router.push('/patient/mes-rdv' as any)} style={styles.cta}>
+      <Pressable onPress={() => router.push('/rendezvous' as any)} style={styles.cta}>
         <Text style={styles.ctaText}>Mes rendez-vous</Text>
       </Pressable>
     </View>

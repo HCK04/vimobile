@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../lib/api';
+import { getPostAuthRoute } from '../../lib/authHelpers';
 
 const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
 
@@ -93,18 +94,11 @@ export default function PatientAuthScreen() {
       const res = await api.login({ email: loginEmail, password: loginPassword });
       // Mark onboarding as completed
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-      const roleName = res?.user?.role?.name || res?.user?.role_name || '';
-      // Navigate based on role similar to web
+      const route = getPostAuthRoute(res?.user || {});
+      // For patients, respect the 'next' parameter if provided
       const safeNext = typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : null;
-      if (['medecin', 'kine', 'orthophoniste', 'psychologue'].includes(roleName)) {
-        router.replace('/(tabs)/profil');
-      } else if (roleName === 'patient') {
-        router.replace((safeNext as any) || ('/(tabs)/profil' as any));
-      } else if (['clinique', 'pharmacie', 'parapharmacie', 'labo_analyse', 'centre_radiologie'].includes(roleName)) {
-        router.replace('/(tabs)/profil');
-      } else {
-        router.replace((safeNext as any) || ('/(tabs)/accueil' as any));
-      }
+      const finalRoute = (route === '/(tabs)/profil' && safeNext) ? safeNext : route;
+      router.replace(finalRoute as any);
     } catch (e: any) {
       const data = e?.response?.data;
       const errs = data?.errors;
@@ -159,13 +153,11 @@ export default function PatientAuthScreen() {
       });
       // Mark onboarding as completed
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-      const roleName = res?.user?.role?.name || res?.user?.role_name || '';
+      const route = getPostAuthRoute(res?.user || {});
+      // For patients, respect the 'next' parameter if provided
       const safeNext = typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : null;
-      if (roleName === 'patient') {
-        router.replace((safeNext as any) || ('/(tabs)/profil' as any));
-      } else {
-        router.replace('/(tabs)/profil');
-      }
+      const finalRoute = (route === '/(tabs)/profil' && safeNext) ? safeNext : route;
+      router.replace(finalRoute as any);
     } catch (e: any) {
       const status = e?.response?.status;
       const data = e?.response?.data;

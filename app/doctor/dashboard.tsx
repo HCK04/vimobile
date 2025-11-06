@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ActivityIndicator, FlatList, Pressable, StyleSheet, RefreshControl, TextInput } from 'react-native';
+import { View, Text, ActivityIndicator, FlatList, Pressable, StyleSheet, RefreshControl, TextInput, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../../lib/apiClient';
@@ -95,136 +96,532 @@ export default function DoctorDashboardScreen() {
     );
   }
 
-  if (loading && !refreshing) return <View style={styles.center}><ActivityIndicator /></View>;
+  if (loading && !refreshing) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={styles.loadingText}>Chargement...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <View style={{ flex: 1 }}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
-      <View style={styles.headerBar}>
-        <Text style={styles.headerTitle}>Tableau de bord</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Pressable onPress={() => router.push('/doctor/notifications' as any)} style={styles.iconBtn}>
-            <Ionicons name="notifications-outline" size={18} color="#2563EB" />
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Bonjour, Dr. {user?.name?.split(' ')[0] || 'Docteur'}</Text>
+          <Text style={styles.subtitle}>Tableau de bord professionnel</Text>
+        </View>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => router.push('/doctor/notifications' as any)} style={styles.notificationBtn}>
+            <Ionicons name="notifications-outline" size={24} color="#111827" />
+            {/* TODO: Add unread badge */}
           </Pressable>
-          <Pressable onPress={onRefresh} style={styles.iconBtn}>
-            <Ionicons name="refresh" size={18} color="#2563EB" />
-          </Pressable>
         </View>
       </View>
 
-      {/* Availability */}
-      <View style={styles.availabilityCard}>
-        <Text style={styles.availabilityText}>Disponibilité: {availability === null ? '—' : availability ? 'Disponible' : 'Indisponible'}</Text>
-        <Pressable onPress={toggleAvailability} style={styles.availabilityBtn}>
-          <Ionicons name="swap-horizontal" size={16} color="#fff" />
-          <Text style={styles.availabilityBtnText}>Basculer</Text>
-        </Pressable>
-      </View>
-
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{statsLoading ? '…' : (stats?.appointmentsUpcoming ?? 0)}</Text>
-          <Text style={styles.statLabel}>A venir</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{statsLoading ? '…' : (stats?.totalPatients ?? 0)}</Text>
-          <Text style={styles.statLabel}>Patients</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{statsLoading ? '…' : (stats?.totalAppointments ?? 0)}</Text>
-          <Text style={styles.statLabel}>Rendez-vous</Text>
-        </View>
-      </View>
-
-      {/* Filters */}
-      <View style={styles.filtersRow}>
-        {(['all','pending','confirmed','cancelled','completed'] as const).map((st) => (
-          <Pressable key={st} onPress={() => setStatusFilter(st)} style={[styles.filterChip, statusFilter === st && styles.filterChipActive]}>
-            <Text style={[styles.filterChipText, statusFilter === st && styles.filterChipTextActive]}>
-              {st === 'all' ? 'Tous' : (st.charAt(0).toUpperCase() + st.slice(1))}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={16} color="#6B7280" />
-        <TextInput value={query} onChangeText={setQuery} placeholder="Rechercher un patient…" placeholderTextColor="#9CA3AF" style={styles.searchInput} />
-        {!!query && (
-          <Pressable onPress={() => setQuery('')}>
-            <Ionicons name="close" size={16} color="#9CA3AF" />
-          </Pressable>
-        )}
-      </View>
-
-      {/* List */}
-      {error ? (
-        <View style={{ flex: 1 }}>
-          <EmptyState
-            icon="lock-closed-outline"
-            title="Authentification requise"
-            description="Connectez-vous pour voir vos rendez-vous."
-            primaryAction={{ label: 'Se connecter', icon: 'log-in-outline', onPress: () => router.push('/auth/professional' as any) }}
-          />
-        </View>
-      ) : filteredItems.length === 0 ? (
-        <View style={{ flex: 1 }}>
-          <EmptyState
-            icon="calendar-outline"
-            title="Aucun rendez-vous"
-            description="Aucun rendez-vous correspondant à votre filtre."
-            primaryAction={{ label: 'Actualiser', icon: 'refresh', onPress: onRefresh }}
-          />
-        </View>
-      ) : (
-        <FlatList
-          data={filteredItems}
-          keyExtractor={(it) => String(it.id)}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 24, gap: 10 }}
-          renderItem={({ item }) => (
-            <Pressable onPress={() => router.push({ pathname: '/doctor/appointments/[id]', params: { id: String(item.id) } } as any)} style={styles.card}>
-              <View style={styles.cardIcon}><Ionicons name="person" size={18} color="#2563EB" /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.patient_name || item.patient?.name || 'Patient'}</Text>
-                <Text style={styles.sub}>{item.date} • {item.time || item.time_start || '—'} • {String(item.status || '').toUpperCase()}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />}
+      >
+        {/* Availability Card */}
+        <View style={styles.availabilityCard}>
+          <View style={styles.availabilityHeader}>
+            <View style={styles.availabilityIconContainer}>
+              <Ionicons 
+                name={availability ? 'checkmark-circle' : 'close-circle'} 
+                size={24} 
+                color={availability ? '#10B981' : '#EF4444'} 
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.availabilityLabel}>Statut de disponibilité</Text>
+              <Text style={styles.availabilityStatus}>
+                {availability === null ? 'Chargement...' : availability ? 'Disponible' : 'Indisponible'}
+              </Text>
+            </View>
+            <Pressable onPress={toggleAvailability} style={styles.toggleBtn}>
+              <Ionicons name="swap-horizontal" size={20} color="#fff" />
             </Pressable>
-          )}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        />
-      )}
-    </View>
+          </View>
+        </View>
+
+        {/* Stats Grid */}
+        <View style={styles.statsContainer}>
+          <Text style={styles.sectionTitle}>Statistiques</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="calendar" size={20} color="#2563EB" />
+              </View>
+              <Text style={styles.statValue}>{statsLoading ? '...' : (stats?.appointmentsUpcoming ?? 0)}</Text>
+              <Text style={styles.statLabel}>À venir</Text>
+            </View>
+            <View style={styles.statCard}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="people" size={20} color="#10B981" />
+              </View>
+              <Text style={styles.statValue}>{statsLoading ? '...' : (stats?.totalPatients ?? 0)}</Text>
+              <Text style={styles.statLabel}>Patients</Text>
+            </View>
+            <View style={styles.statCard}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="time" size={20} color="#F59E0B" />
+              </View>
+              <Text style={styles.statValue}>{statsLoading ? '...' : (stats?.totalAppointments ?? 0)}</Text>
+              <Text style={styles.statLabel}>Total RDV</Text>
+            </View>
+            <View style={styles.statCard}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="cash" size={20} color="#8B5CF6" />
+              </View>
+              <Text style={styles.statValue}>{statsLoading ? '...' : (stats?.revenue ? `${stats.revenue} DH` : '0 DH')}</Text>
+              <Text style={styles.statLabel}>Revenus</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActionsContainer}>
+          <Text style={styles.sectionTitle}>Actions rapides</Text>
+          <View style={styles.quickActionsGrid}>
+            <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/services' as any)}>
+              <View style={[styles.quickActionIcon, { backgroundColor: '#EFF6FF' }]}>
+                <Ionicons name="medical" size={24} color="#2563EB" />
+              </View>
+              <Text style={styles.quickActionText}>Services</Text>
+            </Pressable>
+            <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/profile/absence' as any)}>
+              <View style={[styles.quickActionIcon, { backgroundColor: '#FEF3C7' }]}>
+                <Ionicons name="calendar-clear" size={24} color="#F59E0B" />
+              </View>
+              <Text style={styles.quickActionText}>Absence</Text>
+            </Pressable>
+            <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/profile/edit' as any)}>
+              <View style={[styles.quickActionIcon, { backgroundColor: '#F3E8FF' }]}>
+                <Ionicons name="person" size={24} color="#8B5CF6" />
+              </View>
+              <Text style={styles.quickActionText}>Profil</Text>
+            </Pressable>
+            <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/notifications' as any)}>
+              <View style={[styles.quickActionIcon, { backgroundColor: '#DCFCE7' }]}>
+                <Ionicons name="notifications" size={24} color="#10B981" />
+              </View>
+              <Text style={styles.quickActionText}>Notifications</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Appointments Section */}
+        <View style={styles.appointmentsSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Rendez-vous</Text>
+            <Pressable onPress={onRefresh}>
+              <Ionicons name="refresh" size={20} color="#6B7280" />
+            </Pressable>
+          </View>
+
+          {/* Filters */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
+            {(['all','pending','confirmed','cancelled','completed'] as const).map((st) => (
+              <Pressable 
+                key={st} 
+                onPress={() => setStatusFilter(st)} 
+                style={[styles.filterChip, statusFilter === st && styles.filterChipActive]}
+              >
+                <Text style={[styles.filterChipText, statusFilter === st && styles.filterChipTextActive]}>
+                  {st === 'all' ? 'Tous' : st === 'pending' ? 'En attente' : st === 'confirmed' ? 'Confirmés' : st === 'cancelled' ? 'Annulés' : 'Terminés'}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          {/* Search */}
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
+            <TextInput 
+              value={query} 
+              onChangeText={setQuery} 
+              placeholder="Rechercher un patient..." 
+              placeholderTextColor="#9CA3AF" 
+              style={styles.searchInput} 
+            />
+            {!!query && (
+              <Pressable onPress={() => setQuery('')} style={styles.clearBtn}>
+                <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+              </Pressable>
+            )}
+          </View>
+        </View>
+
+        {/* Appointments List */}
+        {error ? (
+          <View style={styles.emptyContainer}>
+            <EmptyState
+              icon="lock-closed-outline"
+              title="Authentification requise"
+              description="Connectez-vous pour voir vos rendez-vous."
+              primaryAction={{ label: 'Se connecter', icon: 'log-in-outline', onPress: () => router.push('/auth/professional' as any) }}
+            />
+          </View>
+        ) : filteredItems.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <EmptyState
+              icon="calendar-outline"
+              title="Aucun rendez-vous"
+              description="Aucun rendez-vous correspondant à votre filtre."
+              primaryAction={{ label: 'Actualiser', icon: 'refresh', onPress: onRefresh }}
+            />
+          </View>
+        ) : (
+          <View style={styles.appointmentsList}>
+            {filteredItems.map((item) => (
+              <Pressable 
+                key={item.id}
+                onPress={() => router.push({ pathname: '/doctor/appointments/[id]', params: { id: String(item.id) } } as any)} 
+                style={styles.appointmentCard}
+              >
+                <View style={styles.appointmentIcon}>
+                  <Ionicons name="person" size={20} color="#2563EB" />
+                </View>
+                <View style={styles.appointmentContent}>
+                  <Text style={styles.appointmentName}>{item.patient_name || item.patient?.name || 'Patient'}</Text>
+                  <View style={styles.appointmentMeta}>
+                    <Ionicons name="calendar" size={12} color="#6B7280" />
+                    <Text style={styles.appointmentMetaText}>{item.date}</Text>
+                    <Text style={styles.appointmentDot}>•</Text>
+                    <Ionicons name="time" size={12} color="#6B7280" />
+                    <Text style={styles.appointmentMetaText}>{item.time || item.time_start || '—'}</Text>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: item.status === 'confirmed' ? '#DCFCE7' : item.status === 'pending' ? '#FEF3C7' : item.status === 'cancelled' ? '#FEE2E2' : '#F3F4F6' }]}>
+                    <Text style={[styles.statusText, { color: item.status === 'confirmed' ? '#10B981' : item.status === 'pending' ? '#F59E0B' : item.status === 'cancelled' ? '#EF4444' : '#6B7280' }]}>
+                      {item.status === 'confirmed' ? 'Confirmé' : item.status === 'pending' ? 'En attente' : item.status === 'cancelled' ? 'Annulé' : item.status === 'completed' ? 'Terminé' : item.status}
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
-  text: { color: '#374151', marginBottom: 10 },
-  cta: { backgroundColor: '#2563EB', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10 },
-  ctaText: { color: '#fff', fontWeight: '700' },
-  headerBar: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
-  iconBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE', padding: 8, borderRadius: 10 },
-  availabilityCard: { marginHorizontal: 16, marginTop: 6, marginBottom: 10, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  availabilityText: { color: '#111827', fontWeight: '600' },
-  availabilityBtn: { backgroundColor: '#2563EB', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  availabilityBtnText: { color: '#fff', fontWeight: '700', marginLeft: 6 },
-  statsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 10 },
-  statCard: { flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, alignItems: 'center' },
-  statValue: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  statLabel: { fontSize: 12, color: '#6B7280', marginTop: 4 },
-  filtersRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-  filterChip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF' },
-  filterChipActive: { backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' },
-  filterChipText: { color: '#6B7280', fontWeight: '600', fontSize: 12 },
-  filterChipTextActive: { color: '#2563EB' },
-  searchWrap: { marginHorizontal: 16, marginBottom: 8, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFFFFF' },
-  searchInput: { flex: 1, color: '#111827', paddingVertical: 4 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E7EB', flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cardIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
-  name: { fontWeight: '700', color: '#111827' },
-  sub: { color: '#6B7280', marginTop: 2 },
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#6B7280',
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  text: {
+    color: '#374151',
+    marginBottom: 10,
+  },
+  cta: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  ctaText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  greeting: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  notificationBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  availabilityCard: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  availabilityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  availabilityIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  availabilityLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  availabilityStatus: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  toggleBtn: {
+    backgroundColor: '#2563EB',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 16,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  quickActionsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  quickActionCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  quickActionIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  quickActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  appointmentsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  filtersScroll: {
+    marginBottom: 16,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#F9FAFB',
+    marginRight: 8,
+  },
+  filterChipActive: {
+    backgroundColor: '#EFF6FF',
+  },
+  filterChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  filterChipTextActive: {
+    color: '#2563EB',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  searchIcon: {
+    marginRight: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#111827',
+  },
+  clearBtn: {
+    padding: 4,
+  },
+  emptyContainer: {
+    paddingVertical: 40,
+  },
+  appointmentsList: {
+    gap: 12,
+    paddingBottom: 24,
+  },
+  appointmentCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  appointmentIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appointmentContent: {
+    flex: 1,
+  },
+  appointmentName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  appointmentMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+  },
+  appointmentMetaText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  appointmentDot: {
+    fontSize: 12,
+    color: '#D1D5DB',
+    marginHorizontal: 4,
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });

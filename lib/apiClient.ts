@@ -28,12 +28,19 @@ function resolveDevBaseUrl(): string | undefined {
 
 const DEFAULT_BASE_URL = resolveDevBaseUrl() || 'https://api.xn--vi-sant-hya.com/api';
 
+// Debug logging in development
+if (__DEV__) {
+  console.log('[API Client] Base URL:', DEFAULT_BASE_URL);
+  console.log('[API Client] Platform:', Platform.OS);
+}
+
 export const apiClient = axios.create({
   baseURL: DEFAULT_BASE_URL,
   headers: {
     Accept: 'application/json',
     'X-Client-Type': 'mobile',
   },
+  timeout: 30000, // 30 second timeout
 });
 
 apiClient.interceptors.request.use(
@@ -65,9 +72,19 @@ apiClient.interceptors.request.use(
       config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` } as any;
     }
 
+    // Debug logging in development
+    if (__DEV__) {
+      console.log(`[API Request] ${method.toUpperCase()} ${config.baseURL}${url}`);
+    }
+
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    if (__DEV__) {
+      console.error('[API Request Error]', error.message);
+    }
+    return Promise.reject(error);
+  }
 );
 
 apiClient.interceptors.response.use(

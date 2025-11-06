@@ -60,8 +60,11 @@ export default function RootLayout() {
     if (!loaded || onboardingCompleted === null) return;
 
     const inOnboarding = segments[0] === 'onboarding';
+    const inAuth = segments[0] === 'auth';
 
-    if (!onboardingCompleted && !inOnboarding) {
+    // Allow access to auth routes even if onboarding not completed
+    // because auth screens will complete onboarding after successful login/register
+    if (!onboardingCompleted && !inOnboarding && !inAuth) {
       router.replace('/onboarding');
     }
   }, [loaded, onboardingCompleted, segments]);
@@ -84,7 +87,12 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/patient" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/professional" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="doctor/dashboard" options={{ headerShown: false }} />
+        <Stack.Screen name="doctor/services/index" options={{ headerShown: false }} />
+        <Stack.Screen name="doctor/profile/absence" options={{ headerShown: false }} />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style="auto" />

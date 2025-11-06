@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet, Pressable, Alert, ScrollView } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Pressable, Alert, ScrollView, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../../../lib/apiClient';
+import { api } from '../../../lib/api';
 
 export default function AppointmentDetailsScreen() {
   const router = useRouter();
@@ -11,6 +12,11 @@ export default function AppointmentDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [item, setItem] = useState<any>(null);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [newDate, setNewDate] = useState<string>('');
+  const [newTime, setNewTime] = useState<string>('');
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slots, setSlots] = useState<any[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +34,60 @@ export default function AppointmentDetailsScreen() {
     load();
     return () => { cancelled = true; };
   }, [id]);
+
+  const openReschedule = async () => {
+    const d = String(item?.date || '');
+    setNewDate(d);
+    setNewTime('');
+    setRescheduleOpen(true);
+    if (item?.target_user_id && d) {
+      await loadSlots(String(item.target_user_id), d);
+    }
+  };
+
+  const generateDates = () => {
+    const dates: { date: string; day: string; dayNum: number; month: string; isToday: boolean }[] = [];
+    const today = new Date();
+    const dayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+    for (let i = 0; i < 14; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push({
+        date: date.toISOString().split('T')[0],
+        day: dayNames[date.getDay()],
+        dayNum: date.getDate(),
+        month: date.toLocaleDateString('fr-FR', { month: 'short' }),
+        isToday: i === 0,
+      });
+    }
+    return dates;
+  };
+
+  const loadSlots = async (doctorId: string, date: string) => {
+    try {
+      setSlotsLoading(true);
+      const res = await api.getAvailableHours(doctorId, date);
+      setSlots(Array.isArray(res) ? res : []);
+    } catch (e) {
+      setSlots([]);
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
+  const confirmReschedule = async () => {
+    if (!newDate || !newTime) return;
+    try {
+      await api.updateAppointment(String(id), { date: newDate, time: newTime });
+      const { data } = await apiClient.get(`/appointments/${encodeURIComponent(String(id || ''))}`);
+      setItem(data);
+      setRescheduleOpen(false);
+      Alert.alert('Succès', 'Rendez-vous reprogrammé');
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || 'Impossible de reprogrammer ce rendez-vous';
+      Alert.alert('Erreur', msg);
+    }
+  };
 
   const cancel = async () => {
     Alert.alert(
@@ -59,6 +119,7 @@ export default function AppointmentDetailsScreen() {
     switch (status?.toLowerCase()) {
       case 'confirmed': return { bg: '#D1FAE5', text: '#065F46', icon: 'checkmark-circle' };
       case 'pending': return { bg: '#FEF3C7', text: '#92400E', icon: 'time' };
+      case 'scheduled': return { bg: '#DBEAFE', text: '#1E40AF', icon: 'calendar' };
       case 'cancelled': return { bg: '#FEE2E2', text: '#991B1B', icon: 'close-circle' };
       case 'completed': return { bg: '#DBEAFE', text: '#1E40AF', icon: 'checkmark-done-circle' };
       default: return { bg: '#F3F4F6', text: '#6B7280', icon: 'help-circle' };
@@ -89,6 +150,16 @@ export default function AppointmentDetailsScreen() {
   );
 
   const statusInfo = getStatusColor(item.status);
+  const statusNote = (() => {
+    const s = String(item.status || '').toLowerCase();
+    if (s === 'confirmed') return 'Confirmé automatiquement. Le professionnel peut ajuster le statut.';
+    if (s === 'pending') return 'En attente de confirmation par le professionnel.';
+    if (s === 'scheduled') return 'Rendez-vous planifié.';
+    if (s === 'cancelled' || s === 'canceled') return 'Ce rendez-vous est annulé.';
+    if (s === 'completed') return 'Rendez-vous terminé.';
+    if (s === 'missed') return 'Rendez-vous manqué.';
+    return '';
+  })();
   const canCancel = ['pending', 'confirmed', 'scheduled'].includes(String(item.status)?.toLowerCase());
 
   return (
@@ -110,6 +181,13 @@ export default function AppointmentDetailsScreen() {
             {item.status?.toUpperCase() || 'INCONNU'}
           </Text>
         </View>
+
+        {statusNote ? (
+          <View style={styles.infoBanner}>
+            <Ionicons name="information-circle" size={18} color="#2563EB" />
+            <Text style={styles.infoBannerText}>{statusNote}</Text>
+          </View>
+        ) : null}
 
         {/* Doctor Info Card */}
         <View style={styles.card}>
@@ -159,6 +237,15 @@ export default function AppointmentDetailsScreen() {
           )}
         </View>
 
+        <Pressable 
+          onPress={openReschedule} 
+          style={[styles.rescheduleButton, (!item?.target_user_id) && styles.rescheduleButtonDisabled]}
+          disabled={!item?.target_user_id}
+        >
+          <Ionicons name="time" size={20} color="#FFFFFF" />
+          <Text style={styles.rescheduleButtonText}>Reprogrammer</Text>
+        </Pressable>
+
         {/* Cancel Button */}
         {canCancel && (
           <Pressable 
@@ -179,6 +266,64 @@ export default function AppointmentDetailsScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      <Modal visible={rescheduleOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#111827' }}>Reprogrammer</Text>
+              <Pressable onPress={() => setRescheduleOpen(false)}><Ionicons name="close" size={24} color="#111827" /></Pressable>
+            </View>
+
+            <Text style={styles.sectionTitle}>Date</Text>
+            <View style={styles.dateGrid}>
+              {generateDates().map((d) => (
+                <Pressable
+                  key={d.date}
+                  onPress={() => { setNewDate(d.date); if (item?.target_user_id) loadSlots(String(item.target_user_id), d.date); }}
+                  style={[styles.dateCard, newDate === d.date && styles.dateCardActive]}
+                >
+                  <Text style={[styles.dateDay, newDate === d.date && styles.dateDayActive]}>{d.day}</Text>
+                  <Text style={[styles.dateDayNum, newDate === d.date && styles.dateDayNumActive]}>{d.dayNum}</Text>
+                  <Text style={[styles.dateMonth, newDate === d.date && styles.dateMonthActive]}>{d.month}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Heure</Text>
+            {slotsLoading ? (
+              <View style={{ alignItems: 'center', paddingVertical: 16 }}><ActivityIndicator color="#2563EB" /></View>
+            ) : (
+              <View style={styles.timeGrid}>
+                {slots.map((s, i) => {
+                  const time = typeof s === 'string' ? s : s.time;
+                  const available = typeof s === 'string' ? true : !!s.available;
+                  const selected = newTime === time;
+                  return (
+                    <Pressable
+                      key={`slot-${time}-${i}`}
+                      disabled={!available}
+                      onPress={() => available && setNewTime(time)}
+                      style={[styles.timeSlot, selected && styles.timeSlotSelected, !available && styles.timeSlotBooked]}
+                    >
+                      <Text style={[styles.timeSlotText, selected && styles.timeSlotTextSelected, !available && styles.timeSlotTextBooked]}>{time}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+
+            <Pressable
+              onPress={confirmReschedule}
+              disabled={!newDate || !newTime}
+              style={[styles.confirmButton, (!newDate || !newTime) && styles.confirmButtonDisabled]}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.confirmButtonText}>Confirmer</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -311,5 +456,113 @@ const styles = StyleSheet.create({
     color: '#B91C1C',
     fontWeight: '700',
     fontSize: 15,
+  },
+  rescheduleButton: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  rescheduleButtonDisabled: {
+    opacity: 0.6,
+  },
+  rescheduleButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  dateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dateCard: {
+    width: '23%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+  },
+  dateCardActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  dateDay: { fontSize: 11, fontWeight: '600', color: '#6B7280', marginBottom: 2 },
+  dateDayActive: { color: '#FFFFFF' },
+  dateDayNum: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 1 },
+  dateDayNumActive: { color: '#FFFFFF' },
+  dateMonth: { fontSize: 10, color: '#9CA3AF' },
+  dateMonthActive: { color: '#DBEAFE' },
+  timeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  timeSlot: {
+    width: '31%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+  },
+  timeSlotSelected: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  timeSlotBooked: { opacity: 0.5 },
+  timeSlotText: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  timeSlotTextSelected: { color: '#FFFFFF' },
+  timeSlotTextBooked: { color: '#9CA3AF' },
+  confirmButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  confirmButtonDisabled: { opacity: 0.5 },
+  confirmButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    borderColor: '#DBEAFE',
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  infoBannerText: {
+    color: '#1F2937',
+    fontSize: 13,
+    flex: 1,
   },
 });
