@@ -62,11 +62,25 @@ export default function AccueilScreen() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [citySheetVisible, setCitySheetVisible] = useState(false);
 
-  // Mock data for dashboard (replace with real API data)
-  const mockAppointment = undefined; // Will show empty state
-  const upcomingAppointments = 0;
-  const unreadMessages = 0;
-  const favoriteDoctors = 0;
+  // Real data from backend
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  // Get next upcoming appointment
+  const nextAppointment = appointments.find((apt: any) => {
+    const aptDate = new Date(`${apt.date}T${apt.time}`);
+    return aptDate > new Date() && apt.status !== 'cancelled';
+  });
+
+  // Calculate stats
+  const upcomingAppointments = appointments.filter((apt: any) => {
+    const aptDate = new Date(`${apt.date}T${apt.time}`);
+    return aptDate > new Date() && apt.status !== 'cancelled';
+  }).length;
+  // Unread notifications are fetched from backend
+  const unreadMessages = unreadNotifications;
+  const favoriteDoctors = 0; // Favorites not implemented yet
 
   const filteredCities = useMemo(() => {
     const q = (cityQuery || '').toLowerCase();
@@ -74,10 +88,52 @@ export default function AccueilScreen() {
     return MOROCCAN_CITIES.filter((c) => c.toLowerCase().includes(q));
   }, [cityQuery]);
 
-  // Load user
+  // Load user from backend
   useEffect(() => {
-    const { user: u } = getAuth();
-    if (u) setUser(u);
+    const loadUser = async () => {
+      try {
+        const { data } = await apiClient.get('/user/profile');
+        setUser(data);
+      } catch (error) {
+        console.error('Failed to load user:', error);
+        // Fallback to auth state
+        const { user: u } = getAuth();
+        if (u) setUser(u);
+      }
+    };
+    loadUser();
+  }, []);
+
+  // Load appointments from backend
+  useEffect(() => {
+    const loadAppointments = async () => {
+      try {
+        setLoadingAppointments(true);
+        const { data } = await apiClient.get('/appointments');
+        setAppointments(data || []);
+      } catch (error) {
+        console.error('Failed to load appointments:', error);
+        setAppointments([]);
+      } finally {
+        setLoadingAppointments(false);
+      }
+    };
+    loadAppointments();
+  }, []);
+
+  // Load unread notifications count
+  useEffect(() => {
+    const loadNotifications = async () => {
+      try {
+        const { data } = await apiClient.get('/notifications');
+        const count = Array.isArray(data) ? data.filter((n: any) => !n?.read_at).length : 0;
+        setUnreadNotifications(count);
+      } catch (error) {
+        // Silent fail, keep 0
+        setUnreadNotifications(0);
+      }
+    };
+    loadNotifications();
   }, []);
 
   // Build suggestions using backend search
@@ -144,7 +200,7 @@ export default function AccueilScreen() {
     <SafeAreaView style={styles.container}>
       {/* Personalized Header */}
       <PersonalizedHeader 
-        userName={user?.prenom || user?.first_name} 
+        userName={user?.prenom || user?.first_name || user?.name?.split(' ')[0]} 
         unreadCount={unreadMessages} 
       />
 
@@ -265,7 +321,18 @@ export default function AccueilScreen() {
         </View>
 
         {/* Dashboard Components */}
-        <NextAppointmentCard appointment={mockAppointment} />
+        <NextAppointmentCard appointment={nextAppointment ? {
+          id: String(nextAppointment.id),
+          doctorName: nextAppointment.doctor_name,
+          specialty: nextAppointment.reason || 'Consultation',
+          date: new Date(`${nextAppointment.date}T${nextAppointment.time}`).toLocaleDateString('fr-FR', { 
+            weekday: 'long', 
+            day: 'numeric', 
+            month: 'long' 
+          }),
+          time: nextAppointment.time,
+          location: nextAppointment.provider_type || 'Cabinet médical',
+        } : undefined} />
         <QuickActionsGrid />
         <UserStatsRow 
           upcomingAppointments={upcomingAppointments}

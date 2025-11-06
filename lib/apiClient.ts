@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { getAuth } from './api';
+import { getAuth, clearAuth } from './auth';
 
 // Resolve base URL for Expo dev (device/emulator) and prod
 function resolveDevBaseUrl(): string | undefined {
@@ -75,6 +75,13 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
+    const status = error?.response?.status;
+    if (status === 401) {
+      // Clear local auth on unauthorized
+      try {
+        clearAuth();
+      } catch {}
+    }
     return Promise.reject(error);
   }
 );

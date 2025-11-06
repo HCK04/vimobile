@@ -1,18 +1,10 @@
 // Lightweight API helper for React Native (Expo) to mirror web Auth endpoints.
 // Uses the same axios client config as the web app via apiClient (defaults + interceptors).
 import { apiClient } from './apiClient';
+import { setAuth, getAuth } from './auth';
 
-let authToken: string | null = null;
-let authUser: any | null = null;
-
-export function setAuth(token: string | null, user?: any) {
-  authToken = token;
-  if (user !== undefined) authUser = user;
-}
-
-export function getAuth() {
-  return { token: authToken, user: authUser };
-}
+// Re-export for backward compatibility
+export { setAuth, getAuth };
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -32,9 +24,18 @@ async function request(path: string, options: RequestOptions = {}) {
     return res.data;
   } catch (err: any) {
     const data = err?.response?.data;
-    const e: any = new Error((data && (data.message || data.error)) || err.message || 'Request error');
-    e.response = err?.response;
-    throw e;
+    const status = err?.response?.status;
+    const url = err?.config?.url || err?.response?.config?.url;
+    // eslint-disable-next-line no-console
+    console.error('[API Request Error]', {
+      message: err?.message,
+      status,
+      data,
+      url,
+    });
+    const wrapped: any = new Error((data && (data.message || data.error)) || err.message || 'Request error');
+    wrapped.response = err?.response;
+    throw wrapped;
   }
 }
 
@@ -68,26 +69,26 @@ export const api = {
     chronic_diseases?: string[];
     role_id?: number;
   }) => {
-    const fd = new FormData();
-    fd.append('name', payload.name);
-    fd.append('email', payload.email);
-    fd.append('password', payload.password);
-    fd.append('password_confirmation', payload.password_confirmation || payload.password);
-    fd.append('phone', payload.phone);
-    fd.append('role_id', String(payload.role_id ?? 1));
-    if (payload.age !== undefined) fd.append('age', String(payload.age));
-    if (payload.gender) fd.append('gender', String(payload.gender).toLowerCase());
-    if (payload.blood_type) fd.append('blood_type', payload.blood_type);
-    fd.append('allergies', JSON.stringify(payload.allergies || []));
-    fd.append('chronic_diseases', JSON.stringify(payload.chronic_diseases || []));
+    // Send JSON for patient registration (more reliable across platforms)
+    const body = {
+      name: payload.name,
+      email: payload.email,
+      password: payload.password,
+      password_confirmation: payload.password_confirmation || payload.password,
+      phone: payload.phone,
+      role_id: payload.role_id ?? 1,
+      ...(payload.age !== undefined ? { age: payload.age } : {}),
+      ...(payload.gender ? { gender: String(payload.gender).toLowerCase() } : {}),
+      ...(payload.blood_type ? { blood_type: payload.blood_type } : {}),
+      allergies: payload.allergies || [],
+      chronic_diseases: payload.chronic_diseases || [],
+    };
 
-    // Do NOT set Content-Type; let fetch set the boundary for FormData
     const data = await request('/register', {
       method: 'POST',
-      headers: { Accept: 'application/json' },
-      body: fd as any,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body,
     });
-    // server returns token, user
     setAuth(data.token, data.user);
     return data;
   },

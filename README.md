@@ -25,6 +25,24 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+### API base URL
+
+Set `EXPO_PUBLIC_API_URL` to override the backend base URL (optional). Examples:
+
+```bash
+# Localhost (web/iOS)
+EXPO_PUBLIC_API_URL=http://localhost:8000/api
+
+# Android emulator
+EXPO_PUBLIC_API_URL=http://10.0.2.2:8000/api
+
+# LAN IP (physical device)
+EXPO_PUBLIC_API_URL=http://192.168.x.x:8000/api
+
+# Production
+EXPO_PUBLIC_API_URL=https://api.xn--vi-sant-hya.com/api
+```
+
 ## Get a fresh project
 
 When you're ready, run:

@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Platform, View, Image, Text } from 'react-native';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { loadAuthFromStorage } from '../lib/auth';
 
 // Load Reanimated only on native. On web, we use lightweight shims.
 if (Platform.OS !== 'web') {
@@ -25,10 +26,23 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
   // Check onboarding status on mount
   useEffect(() => {
     checkOnboardingStatus();
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await loadAuthFromStorage();
+      } finally {
+        if (mounted) setAuthReady(true);
+      }
+    })();
+    return () => { mounted = false; };
   }, []);
 
   const checkOnboardingStatus = async () => {
@@ -52,7 +66,7 @@ export default function RootLayout() {
     }
   }, [loaded, onboardingCompleted, segments]);
 
-  if (!loaded || onboardingCompleted === null) {
+  if (!loaded || onboardingCompleted === null || !authReady) {
     return (
       <View style={{ flex: 1, backgroundColor: '#1E40AF', alignItems: 'center', justifyContent: 'center' }}>
         <Image

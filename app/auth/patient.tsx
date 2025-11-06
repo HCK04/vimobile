@@ -15,7 +15,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../lib/api';
+
+const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
 
 export default function PatientAuthScreen() {
   const router = useRouter();
@@ -88,20 +91,29 @@ export default function PatientAuthScreen() {
     try {
       setLoading(true);
       const res = await api.login({ email: loginEmail, password: loginPassword });
+      // Mark onboarding as completed
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
       const roleName = res?.user?.role?.name || res?.user?.role_name || '';
       // Navigate based on role similar to web
+      const safeNext = typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : null;
       if (['medecin', 'kine', 'orthophoniste', 'psychologue'].includes(roleName)) {
         router.replace('/(tabs)/profil');
       } else if (roleName === 'patient') {
-        const safeNext = typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : null;
-        router.replace((safeNext as any) || ('/(tabs)/accueil' as any));
+        router.replace((safeNext as any) || ('/(tabs)/profil' as any));
       } else if (['clinique', 'pharmacie', 'parapharmacie', 'labo_analyse', 'centre_radiologie'].includes(roleName)) {
         router.replace('/(tabs)/profil');
       } else {
-        router.replace('/(tabs)/accueil');
+        router.replace((safeNext as any) || ('/(tabs)/accueil' as any));
       }
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || "Une erreur est survenue";
+      const data = e?.response?.data;
+      const errs = data?.errors;
+      let msg = (data && (data.message || data.error)) || e?.message || 'Une erreur est survenue';
+      if (errs && typeof errs === 'object') {
+        const values = Object.values(errs);
+        const first = Array.isArray(values[0]) ? values[0][0] : values[0];
+        if (first) msg = String(first);
+      }
       Alert.alert('Connexion', msg);
     } finally {
       setLoading(false);
@@ -145,15 +157,28 @@ export default function PatientAuthScreen() {
         chronic_diseases: chronics,
         role_id: 1,
       });
+      // Mark onboarding as completed
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
       const roleName = res?.user?.role?.name || res?.user?.role_name || '';
+      const safeNext = typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : null;
       if (roleName === 'patient') {
-        router.replace('/(tabs)/accueil');
+        router.replace((safeNext as any) || ('/(tabs)/profil' as any));
       } else {
         router.replace('/(tabs)/profil');
       }
     } catch (e: any) {
+      const status = e?.response?.status;
       const data = e?.response?.data;
-      const errMsg = (data && (data.message || data.error)) || e?.message || 'Une erreur est survenue';
+      const url = e?.response?.config?.url || e?.config?.url;
+      // eslint-disable-next-line no-console
+      console.error('[RegisterPatient] Error', { message: e?.message, status, data, url });
+      const errs = data?.errors;
+      let errMsg = (data && (data.message || data.error)) || e?.message || 'Une erreur est survenue';
+      if (errs && typeof errs === 'object') {
+        const values = Object.values(errs);
+        const first = Array.isArray(values[0]) ? values[0][0] : values[0];
+        if (first) errMsg = String(first);
+      }
       Alert.alert('Inscription', errMsg);
     } finally {
       setLoading(false);

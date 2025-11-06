@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../lib/api';
+
+const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
 
 const roleMap: Record<string, { id: number; title: string }[]> = {
   professionnel_sante: [
@@ -165,6 +168,8 @@ export default function ProfessionalAuthScreen() {
     try {
       setLoading(true);
       const res = await api.login({ email: loginEmail, password: loginPassword });
+      // Mark onboarding as completed
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
       const roleName = res?.user?.role?.name || res?.user?.role_name || '';
       if (['medecin', 'kine', 'orthophoniste', 'psychologue'].includes(roleName)) router.replace('/(tabs)/profil');
       else if (['clinique', 'pharmacie', 'parapharmacie', 'labo_analyse', 'centre_radiologie'].includes(roleName)) router.replace('/(tabs)/profil');
@@ -287,6 +292,8 @@ export default function ProfessionalAuthScreen() {
           contact_urgence: contactUrgence,
           rdv_patients_suivis_uniquement: rdvSuivisUniquement,
         });
+        // Mark onboarding as completed
+        await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
         const roleName = data?.user?.role?.name || data?.user?.role_name || '';
         if (['medecin','kine','orthophoniste','psychologue'].includes(roleName)) router.replace('/(tabs)/profil'); else router.replace('/(tabs)/accueil');
       } else {
@@ -317,6 +324,8 @@ export default function ProfessionalAuthScreen() {
           moyens_transport: moyensTransport,
           jours_disponibles: joursDisponibles,
         });
+        // Mark onboarding as completed
+        await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
         const roleName = data?.user?.role?.name || data?.user?.role_name || '';
         if (['clinique','pharmacie','parapharmacie','labo_analyse','centre_radiologie'].includes(roleName)) router.replace('/(tabs)/profil'); else router.replace('/(tabs)/accueil');
       }

@@ -22,7 +22,7 @@ export default function MesRDVScreen() {
 
   const cancel = async (id: number) => {
     try {
-      await apiClient.patch(`/appointments/${id}/cancel`);
+      await apiClient.post(`/appointments/${id}/cancel`);
       setItems((prev) => prev.map(a => a.id === id ? { ...a, status: 'cancelled' } : a));
     } catch (e) {
       Alert.alert('Erreur', "Impossible d'annuler ce rendez-vous");

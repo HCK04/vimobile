@@ -61,6 +61,33 @@ export default function ProfileScreen() {
 
   const fullName = user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Utilisateur';
   const initials = fullName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
+  
+  // Extract patient profile data
+  const profile = user.profile || user.patientProfile || user.patient_profile || {};
+  const age = profile.age;
+  const gender = profile.gender;
+  const bloodType = profile.blood_type;
+  
+  // Parse allergies and chronic diseases (can be array or JSON string)
+  const parseList = (value: any): string[] => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [value];
+      } catch {
+        return value === 'Aucune' ? [] : [value];
+      }
+    }
+    return [];
+  };
+  
+  const allergies = parseList(profile.allergies);
+  const chronicDiseases = parseList(profile.chronic_diseases);
+  
+  // Check if user is a patient (has patient-specific data)
+  const isPatient = user.role?.name === 'patient' || user.role_id === 1;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -88,6 +115,18 @@ export default function ProfileScreen() {
         {/* Personal Info Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Informations personnelles</Text>
+          
+          {!!user.name && (
+            <View style={styles.infoRow}>
+              <View style={styles.iconCircle}>
+                <Ionicons name="person" size={20} color="#2563EB" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.infoLabel}>Nom complet</Text>
+                <Text style={styles.infoText}>{user.name}</Text>
+              </View>
+            </View>
+          )}
           
           {!!user.email && (
             <View style={styles.infoRow}>
@@ -137,6 +176,75 @@ export default function ProfileScreen() {
             </View>
           )}
         </View>
+
+        {/* Health Info Card - Only for patients */}
+        {isPatient && (age || gender || bloodType || allergies.length > 0 || chronicDiseases.length > 0) && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Informations de santé</Text>
+            
+            {!!age && (
+              <View style={styles.infoRow}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="calendar" size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Âge</Text>
+                  <Text style={styles.infoText}>{age} ans</Text>
+                </View>
+              </View>
+            )}
+
+            {!!gender && (
+              <View style={styles.infoRow}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name={gender === 'male' || gender === 'homme' ? 'male' : 'female'} size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Genre</Text>
+                  <Text style={styles.infoText}>
+                    {gender === 'male' || gender === 'homme' ? 'Homme' : gender === 'female' || gender === 'femme' ? 'Femme' : gender}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {!!bloodType && (
+              <View style={styles.infoRow}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="water" size={20} color="#EF4444" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Groupe sanguin</Text>
+                  <Text style={styles.infoText}>{bloodType}</Text>
+                </View>
+              </View>
+            )}
+
+            {allergies.length > 0 && (
+              <View style={styles.infoRow}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="warning" size={20} color="#F59E0B" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Allergies</Text>
+                  <Text style={styles.infoText}>{allergies.join(', ')}</Text>
+                </View>
+              </View>
+            )}
+
+            {chronicDiseases.length > 0 && (
+              <View style={styles.infoRow}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="medkit" size={20} color="#8B5CF6" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Maladies chroniques</Text>
+                  <Text style={styles.infoText}>{chronicDiseases.join(', ')}</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Actions Card */}
         <View style={styles.card}>

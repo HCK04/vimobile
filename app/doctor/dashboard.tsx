@@ -80,8 +80,7 @@ export default function DoctorDashboardScreen() {
 
   const toggleAvailability = async () => {
     try {
-      // Simple toggle endpoint; server flips availability
-      await apiClient.post('/professional/profile/toggle-availability');
+      await apiClient.post('/professional/profile/toggle-availability', { disponible: !(availability ?? false) });
       // Re-fetch
       loadProfileAvailability();
     } catch (_) {}
