@@ -23,12 +23,24 @@ export default function AbsenceScreen() {
     setLoading(true);
     try {
       const { data } = await apiClient.get('/professional/profile');
-      const profile = data.medecinProfile || data.kineProfile || data.orthophonisteProfile || data.psychologueProfile || {};
+      const profile =
+        data.medecinProfile ||
+        data.kineProfile ||
+        data.orthophonisteProfile ||
+        data.psychologueProfile ||
+        data.cliniqueProfile ||
+        data.pharmacieProfile ||
+        data.parapharmacieProfile ||
+        data.laboAnalyseProfile ||
+        data.centreRadiologieProfile || {};
       
       setAbsenceStartDate(profile.absence_start_date || '');
       setAbsenceEndDate(profile.absence_end_date || '');
-      setVacationMode(profile.vacation_mode || false);
-      setVacationAutoReactivateDate(profile.vacation_auto_reactivate_date || '');
+      // Backend uses disponible inversely: vacation_mode = !disponible
+      const vacMode = typeof profile.disponible === 'boolean' ? !profile.disponible : false;
+      setVacationMode(vacMode);
+      // Auto-reactivate date is stored in absence_end_date when vacation mode is on
+      setVacationAutoReactivateDate(vacMode && profile.absence_end_date ? profile.absence_end_date : '');
     } catch (e) {
       Alert.alert('Erreur', 'Impossible de charger les informations');
     } finally {
@@ -99,10 +111,13 @@ export default function AbsenceScreen() {
   const handleToggleVacationMode = async (value: boolean) => {
     setVacationMode(value);
     try {
-      await apiClient.post('/professional/profile/toggle-vacation-mode', {
-        vacation_mode: value,
-        vacation_auto_reactivate_date: value && vacationAutoReactivateDate ? vacationAutoReactivateDate : null,
-      });
+      const payload: any = { vacation_mode: value };
+      if (value && vacationAutoReactivateDate) {
+        payload.vacation_auto_reactivate_date = vacationAutoReactivateDate;
+      }
+      await apiClient.post('/professional/profile/toggle-vacation-mode', payload);
+      // Reload to sync state
+      await loadProfile();
     } catch (e) {
       setVacationMode(!value);
       Alert.alert('Erreur', 'Impossible de modifier le mode vacances');
@@ -122,6 +137,7 @@ export default function AbsenceScreen() {
         vacation_auto_reactivate_date: vacationAutoReactivateDate,
       });
       Alert.alert('Succès', 'Date de réactivation automatique enregistrée');
+      await loadProfile();
     } catch (e) {
       Alert.alert('Erreur', 'Impossible d\'enregistrer la date de réactivation');
     } finally {

@@ -50,23 +50,31 @@ apiClient.interceptors.request.use(
     const method = (config.method || 'get').toLowerCase();
     const isGet = method === 'get';
 
-    const publicRoutes = ['/users', '/medecins', '/profiles', '/annonces', '/site-stats', '/register', '/check-email', '/check-availability'];
+    const publicRoutes = ['/users', '/medecins', '/profiles', '/site-stats', '/register', '/check-email', '/check-availability'];
     const url = config.url || '';
 
+    // Public endpoints logic
     const isOrganizationsPublic = isGet && url.startsWith('/organizations');
     const isOrganizationsRegister = url === '/organizations/register' || url.startsWith('/organizations/register');
-    const isPublicRoute =
-      isOrganizationsPublic ||
-      isOrganizationsRegister ||
-      publicRoutes.some((route) => {
-        if (route === '/users' || route === '/medecins' || route === '/profiles') {
-          return url.startsWith(route);
-        }
-        if (route === '/register' || route === '/check-email' || route === '/check-availability' || route === '/annonces' || route === '/site-stats') {
-          return url.includes(route);
-        }
-        return false;
-      });
+
+    // Only root /annonces (public listing) and /annonces/{id} are public, and only for GET.
+    // Do NOT treat /doctor/annonces as public.
+    const isPublicAnnonces = isGet && url.startsWith('/annonces') && !url.startsWith('/doctor/annonces');
+
+    const isPublicBasic = publicRoutes.some((route) => {
+      if (route === '/users' || route === '/medecins' || route === '/profiles') {
+        return isGet && url.startsWith(route);
+      }
+      if (route === '/register' || route === '/check-email' || route === '/check-availability') {
+        return url.startsWith(route);
+      }
+      if (route === '/site-stats') {
+        return url.startsWith('/site-stats');
+      }
+      return false;
+    });
+
+    const isPublicRoute = isOrganizationsPublic || isOrganizationsRegister || isPublicAnnonces || isPublicBasic;
 
     if (token && !isPublicRoute) {
       config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` } as any;

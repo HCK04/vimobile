@@ -19,11 +19,11 @@ export function getPostAuthRoute(user: UserRole, category?: string): string {
   const roleId = user?.role_id;
 
   // Define role buckets
-  const professionalRoles = ['medecin', 'kine', 'orthophoniste', 'psychologue'];
-  const professionalRoleIds = [2, 3, 4, 5];
+  const professionalRoles = ['medecin', 'doctor', 'kine', 'orthophoniste', 'psychologue'];
+  const professionalRoleIds = [2, 3, 4, 5, 6];
   
   const organizationRoles = ['clinique', 'pharmacie', 'parapharmacie', 'labo_analyse', 'centre_radiologie'];
-  const organizationRoleIds = [6, 7, 8, 9, 10];
+  const organizationRoleIds = [7, 8, 9, 10, 11];
 
   // Check if user is a professional (by name or ID or category)
   const isProfessional = 
@@ -61,11 +61,11 @@ export function isProfessionalOrOrg(user: UserRole): boolean {
   const roleName = user?.role?.name || user?.role_name || '';
   const roleId = user?.role_id;
 
-  const professionalRoles = ['medecin', 'kine', 'orthophoniste', 'psychologue'];
-  const professionalRoleIds = [2, 3, 4, 5];
+  const professionalRoles = ['medecin', 'doctor', 'kine', 'orthophoniste', 'psychologue'];
+  const professionalRoleIds = [2, 3, 4, 5, 6];
   
   const organizationRoles = ['clinique', 'pharmacie', 'parapharmacie', 'labo_analyse', 'centre_radiologie'];
-  const organizationRoleIds = [6, 7, 8, 9, 10];
+  const organizationRoleIds = [7, 8, 9, 10, 11];
 
   return (
     professionalRoles.includes(roleName.toLowerCase()) ||

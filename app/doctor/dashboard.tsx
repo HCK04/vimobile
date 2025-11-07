@@ -10,6 +10,8 @@ import { EmptyState } from '@/components/EmptyState';
 export default function DoctorDashboardScreen() {
   const router = useRouter();
   const { user } = getAuth();
+  const roleName = (user?.role?.name || (user as any)?.role_name || '').toLowerCase();
+  const isOrg = ['clinique', 'pharmacie', 'parapharmacie', 'labo_analyse', 'centre_radiologie'].includes(roleName);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -21,6 +23,7 @@ export default function DoctorDashboardScreen() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [stats, setStats] = useState<{ appointmentsUpcoming?: number; totalPatients?: number; totalAppointments?: number; revenue?: number } | null>(null);
   const [availability, setAvailability] = useState<boolean | null>(null);
+  const [profileData, setProfileData] = useState<any>(null);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -37,10 +40,23 @@ export default function DoctorDashboardScreen() {
   const loadProfileAvailability = useCallback(async () => {
     try {
       const res = await apiClient.get('/professional/profile');
-      const dispo = res?.data?.disponible;
-      if (typeof dispo === 'boolean') setAvailability(dispo);
+      const data = res?.data || {};
+      const profile =
+        data.medecinProfile ||
+        data.kineProfile ||
+        data.orthophonisteProfile ||
+        data.psychologueProfile ||
+        data.cliniqueProfile ||
+        data.pharmacieProfile ||
+        data.parapharmacieProfile ||
+        data.laboAnalyseProfile ||
+        data.centreRadiologieProfile || {};
+      const dispo = typeof profile?.disponible === 'boolean' ? profile.disponible : null;
+      setAvailability(dispo);
+      setProfileData(profile); // Store full profile for status indicators
     } catch (_) {
       setAvailability(null);
+      setProfileData(null);
     }
   }, []);
 
@@ -72,8 +88,9 @@ export default function DoctorDashboardScreen() {
   }, [loadAppointments, loadStats, loadProfileAvailability]);
 
   const filteredItems = useMemo(() => {
+    const normalize = (s: string) => (s === 'canceled' ? 'cancelled' : s);
     let list = items;
-    if (statusFilter !== 'all') list = list.filter((it) => (it.status || '').toLowerCase() === statusFilter);
+    if (statusFilter !== 'all') list = list.filter((it) => normalize((it.status || '').toLowerCase()) === statusFilter);
     if (query.trim()) list = list.filter((it) => String(it.patient_name || it.patient?.name || '')
       .toLowerCase().includes(query.trim().toLowerCase()));
     return list;
@@ -112,7 +129,7 @@ export default function DoctorDashboardScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Bonjour, Dr. {user?.name?.split(' ')[0] || 'Docteur'}</Text>
+          <Text style={styles.greeting}>Bonjour, {isOrg ? (user?.name?.split(' ')[0] || 'Professionnel') : `Dr. ${user?.name?.split(' ')[0] || 'Docteur'}`}</Text>
           <Text style={styles.subtitle}>Tableau de bord professionnel</Text>
         </View>
         <View style={styles.headerActions}>
@@ -127,26 +144,91 @@ export default function DoctorDashboardScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />}
       >
-        {/* Availability Card */}
-        <View style={styles.availabilityCard}>
-          <View style={styles.availabilityHeader}>
-            <View style={styles.availabilityIconContainer}>
-              <Ionicons 
-                name={availability ? 'checkmark-circle' : 'close-circle'} 
-                size={24} 
-                color={availability ? '#10B981' : '#EF4444'} 
-              />
+        {/* Status Indicators Section */}
+        <View style={styles.statusSection}>
+          <Text style={styles.sectionTitle}>Statut</Text>
+          
+          {/* Availability Status */}
+          <Pressable 
+            style={[styles.statusCard, availability ? styles.statusCardAvailable : styles.statusCardUnavailable]}
+            onPress={toggleAvailability}
+          >
+            <View style={styles.statusCardContent}>
+              <View style={[styles.statusBadge, availability ? styles.badgeGreen : styles.badgeRed]}>
+                <Ionicons 
+                  name={availability ? 'checkmark-circle' : 'close-circle'} 
+                  size={20} 
+                  color="#fff" 
+                />
+                <Text style={styles.badgeText}>
+                  {availability === null ? 'Chargement...' : availability ? 'Disponible' : 'Indisponible'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.availabilityLabel}>Statut de disponibilité</Text>
-              <Text style={styles.availabilityStatus}>
-                {availability === null ? 'Chargement...' : availability ? 'Disponible' : 'Indisponible'}
-              </Text>
-            </View>
-            <Pressable onPress={toggleAvailability} style={styles.toggleBtn}>
-              <Ionicons name="swap-horizontal" size={20} color="#fff" />
+            <Text style={styles.statusHint}>Appuyez pour changer</Text>
+          </Pressable>
+
+          {/* Vacation Mode Indicator */}
+          {profileData?.vacation_mode && (
+            <Pressable 
+              style={[styles.statusCard, styles.statusCardWarning]}
+              onPress={() => router.push('/doctor/profile/absence' as any)}
+            >
+              <View style={styles.statusCardContent}>
+                <View style={[styles.statusBadge, styles.badgeYellow]}>
+                  <Ionicons name="sunny" size={20} color="#fff" />
+                  <Text style={styles.badgeText}>Mode vacances actif</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </View>
+              {profileData?.absence_end_date && (
+                <Text style={styles.statusHint}>
+                  Jusqu'au {new Date(profileData.absence_end_date).toLocaleDateString('fr-FR')}
+                </Text>
+              )}
             </Pressable>
-          </View>
+          )}
+
+          {/* Absence Period Indicator */}
+          {!profileData?.vacation_mode && profileData?.absence_start_date && profileData?.absence_end_date && (
+            <Pressable 
+              style={[styles.statusCard, styles.statusCardWarning]}
+              onPress={() => router.push('/doctor/profile/absence' as any)}
+            >
+              <View style={styles.statusCardContent}>
+                <View style={[styles.statusBadge, styles.badgeOrange]}>
+                  <Ionicons name="calendar-clear" size={20} color="#fff" />
+                  <Text style={styles.badgeText}>Période d'absence</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </View>
+              <Text style={styles.statusHint}>
+                Du {new Date(profileData.absence_start_date).toLocaleDateString('fr-FR')} au {new Date(profileData.absence_end_date).toLocaleDateString('fr-FR')}
+              </Text>
+            </Pressable>
+          )}
+
+          {/* Guard Status (Pharmacy only) */}
+          {roleName === 'pharmacie' && profileData?.guard && (
+            <Pressable 
+              style={[styles.statusCard, styles.statusCardGuard]}
+              onPress={() => router.push('/doctor/profile/guard' as any)}
+            >
+              <View style={styles.statusCardContent}>
+                <View style={[styles.statusBadge, styles.badgeRed]}>
+                  <Ionicons name="medical" size={20} color="#fff" />
+                  <Text style={styles.badgeText}>Service de garde actif</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </View>
+              {profileData?.guard_start_date && profileData?.guard_end_date && (
+                <Text style={styles.statusHint}>
+                  Du {new Date(profileData.guard_start_date).toLocaleDateString('fr-FR')} au {new Date(profileData.guard_end_date).toLocaleDateString('fr-FR')}
+                </Text>
+              )}
+            </Pressable>
+          )}
         </View>
 
         {/* Stats Grid */}
@@ -200,6 +282,20 @@ export default function DoctorDashboardScreen() {
               </View>
               <Text style={styles.quickActionText}>Absence</Text>
             </Pressable>
+            <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/annonces' as any)}>
+              <View style={[styles.quickActionIcon, { backgroundColor: '#E0E7FF' }]}>
+                <Ionicons name="pricetag" size={24} color="#4F46E5" />
+              </View>
+              <Text style={styles.quickActionText}>Annonces</Text>
+            </Pressable>
+            {roleName === 'pharmacie' && (
+              <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/profile/guard' as any)}>
+                <View style={[styles.quickActionIcon, { backgroundColor: '#FEE2E2' }]}>
+                  <Ionicons name="medical" size={24} color="#EF4444" />
+                </View>
+                <Text style={styles.quickActionText}>Garde</Text>
+              </Pressable>
+            )}
             <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/profile/edit' as any)}>
               <View style={[styles.quickActionIcon, { backgroundColor: '#F3E8FF' }]}>
                 <Ionicons name="person" size={24} color="#8B5CF6" />
@@ -278,38 +374,42 @@ export default function DoctorDashboardScreen() {
           </View>
         ) : (
           <View style={styles.appointmentsList}>
-            {filteredItems.map((item) => (
-              <Pressable 
-                key={item.id}
-                onPress={() => router.push({ pathname: '/doctor/appointments/[id]', params: { id: String(item.id) } } as any)} 
-                style={styles.appointmentCard}
-              >
-                <View style={styles.appointmentIcon}>
-                  <Ionicons name="person" size={20} color="#2563EB" />
-                </View>
-                <View style={styles.appointmentContent}>
-                  <Text style={styles.appointmentName}>{item.patient_name || item.patient?.name || 'Patient'}</Text>
-                  <View style={styles.appointmentMeta}>
-                    <Ionicons name="calendar" size={12} color="#6B7280" />
-                    <Text style={styles.appointmentMetaText}>{item.date}</Text>
-                    <Text style={styles.appointmentDot}>•</Text>
-                    <Ionicons name="time" size={12} color="#6B7280" />
-                    <Text style={styles.appointmentMetaText}>{item.time || item.time_start || '—'}</Text>
+            {filteredItems.map((item) => {
+              const st = (item.status || '').toLowerCase();
+              const stNorm = st === 'canceled' ? 'cancelled' : st;
+              return (
+                <Pressable 
+                  key={item.id}
+                  onPress={() => router.push({ pathname: '/doctor/appointments/[id]', params: { id: String(item.id) } } as any)} 
+                  style={styles.appointmentCard}
+                >
+                  <View style={styles.appointmentIcon}>
+                    <Ionicons name="person" size={20} color="#2563EB" />
                   </View>
-                  <View style={[styles.statusBadge, { backgroundColor: item.status === 'confirmed' ? '#DCFCE7' : item.status === 'pending' ? '#FEF3C7' : item.status === 'cancelled' ? '#FEE2E2' : '#F3F4F6' }]}>
-                    <Text style={[styles.statusText, { color: item.status === 'confirmed' ? '#10B981' : item.status === 'pending' ? '#F59E0B' : item.status === 'cancelled' ? '#EF4444' : '#6B7280' }]}>
-                      {item.status === 'confirmed' ? 'Confirmé' : item.status === 'pending' ? 'En attente' : item.status === 'cancelled' ? 'Annulé' : item.status === 'completed' ? 'Terminé' : item.status}
-                    </Text>
+                  <View style={styles.appointmentContent}>
+                    <Text style={styles.appointmentName}>{item.patient_name || item.patient?.name || 'Patient'}</Text>
+                    <View style={styles.appointmentMeta}>
+                      <Ionicons name="calendar" size={12} color="#6B7280" />
+                      <Text style={styles.appointmentMetaText}>{item.date}</Text>
+                      <Text style={styles.appointmentDot}>•</Text>
+                      <Ionicons name="time" size={12} color="#6B7280" />
+                      <Text style={styles.appointmentMetaText}>{item.time || item.time_start || '—'}</Text>
+                    </View>
+                    <View style={[styles.appointmentStatusBadge, { backgroundColor: stNorm === 'confirmed' ? '#DCFCE7' : stNorm === 'pending' ? '#FEF3C7' : stNorm === 'cancelled' ? '#FEE2E2' : '#F3F4F6' }]}>
+                      <Text style={[styles.statusText, { color: stNorm === 'confirmed' ? '#10B981' : stNorm === 'pending' ? '#F59E0B' : stNorm === 'cancelled' ? '#EF4444' : '#6B7280' }]}>
+                        {stNorm === 'confirmed' ? 'Confirmé' : stNorm === 'pending' ? 'En attente' : stNorm === 'cancelled' ? 'Annulé' : stNorm === 'completed' ? 'Terminé' : item.status}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
-              </Pressable>
-            ))}
+                  <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+                </Pressable>
+              );
+            })}
           </View>
         )}
-      </ScrollView>
-    </SafeAreaView>
-  );
+    </ScrollView>
+  </SafeAreaView>
+);
 }
 
 const styles = StyleSheet.create({
@@ -381,49 +481,71 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  availabilityCard: {
-    marginHorizontal: 20,
+  statusSection: {
+    paddingHorizontal: 20,
     marginTop: 20,
-    marginBottom: 16,
+    marginBottom: 24,
+  },
+  statusCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E5E7EB',
   },
-  availabilityHeader: {
+  statusCardAvailable: {
+    borderLeftColor: '#10B981',
+  },
+  statusCardUnavailable: {
+    borderLeftColor: '#EF4444',
+  },
+  statusCardWarning: {
+    borderLeftColor: '#F59E0B',
+  },
+  statusCardGuard: {
+    borderLeftColor: '#EF4444',
+  },
+  statusCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  availabilityIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F9FAFB',
+  statusBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
-  availabilityLabel: {
+  badgeGreen: {
+    backgroundColor: '#10B981',
+  },
+  badgeRed: {
+    backgroundColor: '#EF4444',
+  },
+  badgeYellow: {
+    backgroundColor: '#F59E0B',
+  },
+  badgeOrange: {
+    backgroundColor: '#F97316',
+  },
+  badgeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  statusHint: {
     fontSize: 12,
     color: '#6B7280',
-    marginBottom: 4,
-  },
-  availabilityStatus: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  toggleBtn: {
-    backgroundColor: '#2563EB',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: 4,
   },
   statsContainer: {
     paddingHorizontal: 20,
@@ -614,7 +736,7 @@ const styles = StyleSheet.create({
     color: '#D1D5DB',
     marginHorizontal: 4,
   },
-  statusBadge: {
+  appointmentStatusBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10,
     paddingVertical: 4,

@@ -206,41 +206,95 @@ export const api = {
     // gallery images (optional)
     imgs?: any[];
   }) => {
+    const hasFiles = Array.isArray(payload.imgs) && payload.imgs.some(Boolean);
+
+    // Prefer JSON for React Native unless files are present (avoids RN FormData network issues)
+    if (!hasFiles) {
+      // Backend expects services as string; arrays are allowed for other fields
+      const body: any = {
+        name: payload.name || payload.nom_etablissement || '',
+        email: payload.email,
+        password: payload.password,
+        password_confirmation: payload.password_confirmation || payload.password,
+        phone: payload.phone,
+        role_id: payload.role_id,
+        nom_etablissement: payload.nom_etablissement || payload.name,
+        responsable_name: payload.responsable_name,
+        adresse: payload.adresse,
+        ville: payload.ville,
+        services: Array.isArray(payload.services) ? JSON.stringify(payload.services) : payload.services,
+        org_presentation: payload.org_presentation,
+        other_service: payload.other_service,
+        services_description: payload.services_description,
+        additional_info: payload.additional_info,
+        informations_pratiques: payload.informations_pratiques,
+        contact_urgence: payload.contact_urgence,
+        description: payload.description,
+        horaire_start: payload.horaire_start,
+        horaire_end: payload.horaire_end,
+        clinic_presentation: payload.clinic_presentation,
+        clinic_services_description: payload.clinic_services_description,
+        moyens_paiement: payload.moyens_paiement || [],
+        moyens_transport: payload.moyens_transport || [],
+        jours_disponibles: payload.jours_disponibles || [],
+        guard: payload.guard ? 1 : 0,
+      };
+
+      const data = await request('/organizations/register', {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body,
+      });
+      setAuth(data.token, data.user);
+      // Refresh user data to get role_name populated
+      try {
+        const userRes = await apiClient.get('/user');
+        await setAuth(data.token, userRes.data);
+      } catch (e) {
+        // Non-fatal, continue with registration response
+      }
+      return data;
+    }
+
+    // Multipart path (only when images provided)
     const fd = new FormData();
-    if (payload.name) fd.append('name', payload.name);
-    fd.append('email', payload.email);
-    fd.append('password', payload.password);
-    fd.append('password_confirmation', payload.password_confirmation || payload.password);
-    fd.append('phone', payload.phone);
-    fd.append('role_id', String(payload.role_id));
+    fd.append('name', (payload.name || payload.nom_etablissement || '') as any);
+    fd.append('email', payload.email as any);
+    fd.append('password', payload.password as any);
+    fd.append('password_confirmation', (payload.password_confirmation || payload.password) as any);
+    fd.append('phone', payload.phone as any);
+    fd.append('role_id', String(payload.role_id) as any);
 
-    if (payload.nom_etablissement) fd.append('nom_etablissement', payload.nom_etablissement);
-    if (payload.responsable_name) fd.append('responsable_name', payload.responsable_name);
-    if (payload.adresse) fd.append('adresse', payload.adresse);
-    if (payload.ville) fd.append('ville', payload.ville);
+    if (payload.nom_etablissement) fd.append('nom_etablissement', payload.nom_etablissement as any);
+    if (payload.responsable_name) fd.append('responsable_name', payload.responsable_name as any);
+    if (payload.adresse) fd.append('adresse', payload.adresse as any);
+    if (payload.ville) fd.append('ville', payload.ville as any);
 
-    if (Array.isArray(payload.services)) fd.append('services', JSON.stringify(payload.services));
-    if (payload.org_presentation) fd.append('org_presentation', payload.org_presentation);
-    if (payload.other_service) fd.append('other_service', payload.other_service);
-    if (payload.services_description) fd.append('services_description', payload.services_description);
-    if (payload.additional_info) fd.append('additional_info', payload.additional_info);
-    if (payload.informations_pratiques) fd.append('informations_pratiques', payload.informations_pratiques);
-    if (payload.contact_urgence) fd.append('contact_urgence', payload.contact_urgence);
-    if (payload.description) fd.append('description', payload.description);
-    if (payload.horaire_start) fd.append('horaire_start', payload.horaire_start);
-    if (payload.horaire_end) fd.append('horaire_end', payload.horaire_end);
-    if (payload.guard !== undefined) fd.append('guard', payload.guard ? '1' : '0');
+    if (Array.isArray(payload.services)) fd.append('services', JSON.stringify(payload.services) as any);
+    if (payload.org_presentation) fd.append('org_presentation', payload.org_presentation as any);
+    if (payload.other_service) fd.append('other_service', payload.other_service as any);
+    if (payload.services_description) fd.append('services_description', payload.services_description as any);
+    if (payload.additional_info) fd.append('additional_info', payload.additional_info as any);
+    if (payload.informations_pratiques) fd.append('informations_pratiques', payload.informations_pratiques as any);
+    if (payload.contact_urgence) fd.append('contact_urgence', payload.contact_urgence as any);
+    if (payload.description) fd.append('description', payload.description as any);
+    if (payload.horaire_start) fd.append('horaire_start', payload.horaire_start as any);
+    if (payload.horaire_end) fd.append('horaire_end', payload.horaire_end as any);
+    if (payload.guard !== undefined) fd.append('guard', payload.guard ? ('1' as any) : ('0' as any));
 
-    // clinic mappings
-    if (payload.clinic_presentation) fd.append('clinic_presentation', payload.clinic_presentation);
-    if (payload.clinic_services_description) fd.append('clinic_services_description', payload.clinic_services_description);
+    if (payload.clinic_presentation) fd.append('clinic_presentation', payload.clinic_presentation as any);
+    if (payload.clinic_services_description) fd.append('clinic_services_description', payload.clinic_services_description as any);
 
-    (payload.moyens_paiement || []).forEach((v, i) => fd.append(`moyens_paiement[${i}]`, v));
-    (payload.moyens_transport || []).forEach((v, i) => fd.append(`moyens_transport[${i}]`, v));
-    (payload.jours_disponibles || []).forEach((v, i) => fd.append(`jours_disponibles[${i}]`, v));
+    (payload.moyens_paiement || []).forEach((v, i) => fd.append(`moyens_paiement[${i}]`, v as any));
+    (payload.moyens_transport || []).forEach((v, i) => fd.append(`moyens_transport[${i}]`, v as any));
+    (payload.jours_disponibles || []).forEach((v, i) => fd.append(`jours_disponibles[${i}]`, v as any));
 
     (payload.imgs || []).slice(0, 6).forEach((file, idx) => {
-      if (file) fd.append(`imgs[${idx}]`, file as any);
+      if (!file) return;
+      const f: any = typeof file === 'string'
+        ? { uri: file, name: `image_${idx}.jpg`, type: 'image/jpeg' }
+        : (file.uri ? file : null);
+      if (f) fd.append(`imgs[${idx}]`, f as any);
     });
 
     const data = await request('/organizations/register', {
@@ -249,6 +303,13 @@ export const api = {
       body: fd as any,
     });
     setAuth(data.token, data.user);
+    // Refresh user data to get role_name populated
+    try {
+      const userRes = await apiClient.get('/user');
+      await setAuth(data.token, userRes.data);
+    } catch (e) {
+      // Non-fatal, continue with registration response
+    }
     return data;
   },
 
@@ -335,17 +396,25 @@ export const api = {
     });
   },
 
-  setAbsence: async (payload: { start_date: string; end_date: string; reason?: string }) => {
+  setAbsence: async (payload: { start_date?: string; end_date?: string; absence_start_date?: string | null; absence_end_date?: string | null; reason?: string }) => {
+    // Map to backend expected keys
+    const body: any = {
+      absence_start_date: payload.absence_start_date ?? payload.start_date ?? null,
+      absence_end_date: payload.absence_end_date ?? payload.end_date ?? null,
+    };
+    if ('reason' in payload) body.reason = (payload as any).reason;
     return request('/professional/profile/set-absence', {
       method: 'POST',
-      body: payload,
+      body,
     });
   },
 
-  toggleVacationMode: async (vacation_mode: boolean) => {
+  toggleVacationMode: async (vacation_mode: boolean, vacation_auto_reactivate_date?: string | null) => {
+    const body: any = { vacation_mode };
+    if (vacation_auto_reactivate_date !== undefined) body.vacation_auto_reactivate_date = vacation_auto_reactivate_date;
     return request('/professional/profile/toggle-vacation-mode', {
       method: 'POST',
-      body: { vacation_mode },
+      body,
     });
   },
 
@@ -376,5 +445,174 @@ export const api = {
 
   markAllNotificationsAsRead: async () => {
     return request('/notifications/read-all', { method: 'PUT' });
+  },
+
+  // Annonces (Announcements) management
+  getAnnonces: async (filters?: { type?: string; category?: string; status?: string; search?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.type) params.append('type', filters.type);
+    if (filters?.category) params.append('category', filters.category);
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.search) params.append('search', filters.search);
+    const qs = params.toString();
+    return request(`/doctor/annonces${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
+
+  getAnnonce: async (id: string | number) => {
+    return request(`/doctor/annonces/${id}`, { method: 'GET' });
+  },
+
+  createAnnonce: async (payload: {
+    title: string;
+    description: string;
+    content?: string;
+    type: string;
+    category?: string;
+    price: number;
+    duration?: number;
+    location?: string;
+    availability?: any;
+    address: string;
+    phone: string;
+    email: string;
+    is_active: boolean;
+    pourcentage_reduction?: number;
+    images?: any[];
+  }) => {
+    const hasFiles = Array.isArray(payload.images) && payload.images.some(Boolean);
+
+    if (!hasFiles) {
+      // JSON payload
+      const body: any = {
+        title: payload.title,
+        description: payload.description,
+        content: payload.content,
+        type: payload.type,
+        category: payload.category,
+        price: payload.price,
+        duration: payload.duration,
+        location: payload.location,
+        availability: payload.availability ? JSON.stringify(payload.availability) : null,
+        address: payload.address,
+        phone: payload.phone,
+        email: payload.email,
+        is_active: payload.is_active ? 1 : 0,
+        pourcentage_reduction: payload.pourcentage_reduction || 0,
+      };
+      return request('/doctor/annonces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+    }
+
+    // FormData for images
+    const fd = new FormData();
+    fd.append('title', payload.title as any);
+    fd.append('description', payload.description as any);
+    if (payload.content) fd.append('content', payload.content as any);
+    fd.append('type', payload.type as any);
+    if (payload.category) fd.append('category', payload.category as any);
+    fd.append('price', String(payload.price) as any);
+    if (payload.duration) fd.append('duration', String(payload.duration) as any);
+    if (payload.location) fd.append('location', payload.location as any);
+    if (payload.availability) fd.append('availability', JSON.stringify(payload.availability) as any);
+    fd.append('address', payload.address as any);
+    fd.append('phone', payload.phone as any);
+    fd.append('email', payload.email as any);
+    fd.append('is_active', (payload.is_active ? '1' : '0') as any);
+    fd.append('pourcentage_reduction', String(payload.pourcentage_reduction || 0) as any);
+
+    (payload.images || []).forEach((file, idx) => {
+      if (!file) return;
+      const f: any = typeof file === 'string'
+        ? { uri: file, name: `image_${idx}.jpg`, type: 'image/jpeg' }
+        : (file.uri ? file : null);
+      if (f) fd.append(`images[${idx}]`, f as any);
+    });
+
+    return request('/doctor/annonces', {
+      method: 'POST',
+      body: fd as any,
+    });
+  },
+
+  updateAnnonce: async (id: string | number, payload: Partial<{
+    title: string;
+    description: string;
+    price: number;
+    address: string;
+    phone: string;
+    email: string;
+    is_active: boolean;
+    pourcentage_reduction: number;
+    images: any[];
+    keep_images: boolean;
+  }>) => {
+    const hasFiles = Array.isArray(payload.images) && payload.images.some(Boolean);
+
+    if (!hasFiles) {
+      const body: any = {};
+      if (payload.title !== undefined) body.title = payload.title;
+      if (payload.description !== undefined) body.description = payload.description;
+      if (payload.price !== undefined) body.price = payload.price;
+      if (payload.address !== undefined) body.address = payload.address;
+      if (payload.phone !== undefined) body.phone = payload.phone;
+      if (payload.email !== undefined) body.email = payload.email;
+      if (payload.is_active !== undefined) body.is_active = payload.is_active ? 1 : 0;
+      if (payload.pourcentage_reduction !== undefined) body.pourcentage_reduction = payload.pourcentage_reduction;
+
+      return request(`/doctor/annonces/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+    }
+
+    // FormData for images
+    const fd = new FormData();
+    if (payload.title) fd.append('title', payload.title as any);
+    if (payload.description) fd.append('description', payload.description as any);
+    if (payload.price !== undefined) fd.append('price', String(payload.price) as any);
+    if (payload.address) fd.append('address', payload.address as any);
+    if (payload.phone) fd.append('phone', payload.phone as any);
+    if (payload.email) fd.append('email', payload.email as any);
+    if (payload.is_active !== undefined) fd.append('is_active', (payload.is_active ? '1' : '0') as any);
+    if (payload.pourcentage_reduction !== undefined) fd.append('pourcentage_reduction', String(payload.pourcentage_reduction) as any);
+    if (payload.keep_images !== undefined) fd.append('keep_images', (payload.keep_images ? '1' : '0') as any);
+
+    (payload.images || []).forEach((file, idx) => {
+      if (!file) return;
+      const f: any = typeof file === 'string'
+        ? { uri: file, name: `image_${idx}.jpg`, type: 'image/jpeg' }
+        : (file.uri ? file : null);
+      if (f) fd.append(`images[${idx}]`, f as any);
+    });
+
+    return request(`/doctor/annonces/${id}`, {
+      method: 'POST',
+      body: fd as any,
+    });
+  },
+
+  toggleAnnonceStatus: async (id: string | number, is_active?: boolean) => {
+    const body: any = {};
+    if (is_active !== undefined) body.is_active = is_active ? 1 : 0;
+    return request(`/doctor/annonces/${id}/toggle-status`, {
+      method: 'PUT',
+      body,
+    });
+  },
+
+  activateAllAnnonces: async () => {
+    return request('/doctor/annonces/activate-all', { method: 'POST' });
+  },
+
+  deactivateAllAnnonces: async () => {
+    return request('/doctor/annonces/deactivate-all', { method: 'POST' });
+  },
+
+  deleteAnnonce: async (id: string | number) => {
+    return request(`/doctor/annonces/${id}`, { method: 'DELETE' });
   },
 };
