@@ -1,6 +1,7 @@
 // Auth state management - separate from API to avoid circular imports
 import * as SecureStore from 'expo-secure-store';
 import { apiClient } from './apiClient';
+import { setupPushNotifications, cleanupPushNotifications } from './pushNotifications';
 
 let authToken: string | null = null;
 let authUser: any | null = null;
@@ -55,6 +56,13 @@ export async function loadAuthFromStorage() {
 }
 
 export async function clearAuth() {
+  // Cleanup push notifications before clearing auth
+  try {
+    await cleanupPushNotifications();
+  } catch (error) {
+    console.error('[Auth] Push cleanup failed:', error);
+  }
+  
   authToken = null;
   authUser = null;
   await Promise.all([
@@ -70,6 +78,14 @@ export async function login(email: string, password: string) {
   const token = data?.token ?? null;
   const user = data?.user ?? null;
   await setAuth(token, user);
+  
+  // Setup push notifications after successful login
+  try {
+    await setupPushNotifications();
+  } catch (error) {
+    console.error('[Auth] Push setup failed:', error);
+  }
+  
   return { token, user };
 }
 

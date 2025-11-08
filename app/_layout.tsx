@@ -4,9 +4,11 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, View, Image, Text } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadAuthFromStorage } from '../lib/auth';
+import { addNotificationResponseListener, handleNotificationNavigation, setupPushNotifications } from '../lib/pushNotifications';
+import type * as Notifications from 'expo-notifications';
 
 // Load Reanimated only on native. On web, we use lightweight shims.
 if (Platform.OS !== 'web') {
@@ -27,6 +29,8 @@ export default function RootLayout() {
   });
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const notificationListener = useRef<any>();
+  const responseListener = useRef<any>();
 
   // Check onboarding status on mount
   useEffect(() => {
@@ -37,13 +41,36 @@ export default function RootLayout() {
     let mounted = true;
     (async () => {
       try {
-        await loadAuthFromStorage();
+        const auth = await loadAuthFromStorage();
+        // Setup push if user is already logged in
+        if (auth.token && auth.user) {
+          try {
+            await setupPushNotifications();
+          } catch (error) {
+            console.error('[Layout] Push setup failed:', error);
+          }
+        }
       } finally {
         if (mounted) setAuthReady(true);
       }
     })();
     return () => { mounted = false; };
   }, []);
+
+  // Setup notification listeners
+  useEffect(() => {
+    // Listen for notification taps
+    responseListener.current = addNotificationResponseListener((response: any) => {
+      const data = response.notification.request.content.data;
+      handleNotificationNavigation(data, router);
+    });
+
+    return () => {
+      if (responseListener.current) {
+        responseListener.current.remove();
+      }
+    };
+  }, [router]);
 
   const checkOnboardingStatus = async () => {
     try {
