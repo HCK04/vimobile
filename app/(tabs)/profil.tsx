@@ -101,6 +101,25 @@ export default function ProfilScreen() {
           </Pressable>
         </View>
 
+        {/* Subscription Status */}
+        {user?.is_subscribed && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Abonnement</Text>
+            <View style={styles.subscriptionCard}>
+              <View style={styles.subscriptionBadge}>
+                <Ionicons name="star" size={16} color="#F59E0B" />
+                <Text style={styles.subscriptionType}>
+                  {user?.subscription_type === 'family' ? 'Famille Premium' : 'Premium'}
+                </Text>
+              </View>
+              <View style={styles.subscriptionStatus}>
+                <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                <Text style={styles.statusLabel}>Actif</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Santé</Text>
           <Pressable style={styles.row} onPress={() => router.push('/patient/sante' as any)}>
@@ -170,4 +189,41 @@ const styles = StyleSheet.create({
   rowText: { color: '#111827', fontWeight: '600' },
   logout: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', marginTop: 16, padding: 12, borderRadius: 10, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' },
   logoutText: { color: '#EF4444', fontWeight: '800' },
+  subscriptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#F3F4F6'
+  },
+  subscriptionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  subscriptionType: {
+    color: '#92400E',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  subscriptionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusLabel: {
+    color: '#10B981',
+    fontWeight: '600',
+    fontSize: 12,
+  },
 });

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet, Pressable, Alert, ScrollView, Modal } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Pressable, Alert, ScrollView, Modal, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../../../lib/apiClient';
 import { api } from '../../../lib/api';
+import QRCode from 'react-native-qrcode-svg';
 
 export default function AppointmentDetailsScreen() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function AppointmentDetailsScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [item, setItem] = useState<any>(null);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const [newDate, setNewDate] = useState<string>('');
   const [newTime, setNewTime] = useState<string>('');
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -131,7 +133,7 @@ export default function AppointmentDetailsScreen() {
       <View style={styles.center}><ActivityIndicator size="large" color="#2563EB" /></View>
     </SafeAreaView>
   );
-  
+
   if (!item) return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -203,7 +205,7 @@ export default function AppointmentDetailsScreen() {
         {/* Appointment Details Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Informations</Text>
-          
+
           <View style={styles.infoRow}>
             <View style={styles.iconCircle}>
               <Ionicons name="calendar" size={20} color="#2563EB" />
@@ -237,8 +239,8 @@ export default function AppointmentDetailsScreen() {
           )}
         </View>
 
-        <Pressable 
-          onPress={openReschedule} 
+        <Pressable
+          onPress={openReschedule}
           style={[styles.rescheduleButton, (!item?.target_user_id) && styles.rescheduleButtonDisabled]}
           disabled={!item?.target_user_id}
         >
@@ -246,10 +248,19 @@ export default function AppointmentDetailsScreen() {
           <Text style={styles.rescheduleButtonText}>Reprogrammer</Text>
         </Pressable>
 
+        {/* QR Code Button */}
+        <Pressable
+          onPress={() => setQrModalOpen(true)}
+          style={styles.qrButton}
+        >
+          <Ionicons name="qr-code" size={20} color="#2563EB" />
+          <Text style={styles.qrButtonText}>Afficher le QR Code</Text>
+        </Pressable>
+
         {/* Cancel Button */}
         {canCancel && (
-          <Pressable 
-            onPress={cancel} 
+          <Pressable
+            onPress={cancel}
             style={[styles.cancelButton, cancelling && styles.cancelButtonDisabled]}
             disabled={cancelling}
           >
@@ -266,6 +277,60 @@ export default function AppointmentDetailsScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* QR Code Modal */}
+      <Modal visible={qrModalOpen} animationType="fade" transparent>
+        <View style={styles.qrModalOverlay}>
+          <View style={styles.qrModalCard}>
+            <View style={styles.qrModalHeader}>
+              <Text style={styles.qrModalTitle}>QR Code du rendez-vous</Text>
+              <Pressable onPress={() => setQrModalOpen(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </Pressable>
+            </View>
+
+            <View style={styles.qrCodeContainer}>
+              <QRCode
+                value={JSON.stringify({
+                  type: 'appointment',
+                  id: item?.id,
+                  doctor_name: item?.doctor_name,
+                  date: item?.date,
+                  time: item?.time,
+                  reason: item?.reason,
+                  status: item?.status,
+                })}
+                size={200}
+                color="#1E293B"
+                backgroundColor="#FFFFFF"
+              />
+            </View>
+
+            <View style={styles.qrInfoBox}>
+              <Text style={styles.qrInfoTitle}>{item?.doctor_name}</Text>
+              <Text style={styles.qrInfoText}>{item?.date} à {item?.time}</Text>
+              {item?.reason && <Text style={styles.qrInfoReason}>{item?.reason}</Text>}
+            </View>
+
+            <Pressable
+              style={styles.shareButton}
+              onPress={async () => {
+                try {
+                  await Share.share({
+                    message: `Rendez-vous avec ${item?.doctor_name}\nDate: ${item?.date}\nHeure: ${item?.time}\nMotif: ${item?.reason || 'Non spécifié'}\nStatut: ${item?.status}`,
+                    title: 'Mon rendez-vous Vi-Santé',
+                  });
+                } catch (error) {
+                  console.error('Error sharing:', error);
+                }
+              }}
+            >
+              <Ionicons name="share-outline" size={20} color="#FFFFFF" />
+              <Text style={styles.shareButtonText}>Partager</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={rescheduleOpen} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
@@ -564,5 +629,94 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     fontSize: 13,
     flex: 1,
+  },
+  // QR Code styles
+  qrButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  qrButtonText: {
+    color: '#2563EB',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  qrModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  qrModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  qrModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  qrModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  qrCodeContainer: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 16,
+  },
+  qrInfoBox: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  qrInfoTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  qrInfoText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  qrInfoReason: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+  },
+  shareButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
