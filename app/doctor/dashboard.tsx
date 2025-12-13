@@ -256,13 +256,6 @@ export default function DoctorDashboardScreen() {
               <Text style={styles.statValue}>{statsLoading ? '...' : (stats?.totalAppointments ?? 0)}</Text>
               <Text style={styles.statLabel}>Total RDV</Text>
             </View>
-            <View style={styles.statCard}>
-              <View style={styles.statIconContainer}>
-                <Ionicons name="cash" size={20} color="#8B5CF6" />
-              </View>
-              <Text style={styles.statValue}>{statsLoading ? '...' : (stats?.revenue ? `${stats.revenue} DH` : '0 DH')}</Text>
-              <Text style={styles.statLabel}>Revenus</Text>
-            </View>
           </View>
         </View>
 
@@ -281,12 +274,6 @@ export default function DoctorDashboardScreen() {
                 <Ionicons name="calendar-clear" size={24} color="#F59E0B" />
               </View>
               <Text style={styles.quickActionText}>Absence</Text>
-            </Pressable>
-            <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/annonces' as any)}>
-              <View style={[styles.quickActionIcon, { backgroundColor: '#E0E7FF' }]}>
-                <Ionicons name="pricetag" size={24} color="#4F46E5" />
-              </View>
-              <Text style={styles.quickActionText}>Annonces</Text>
             </Pressable>
             {roleName === 'pharmacie' && (
               <Pressable style={styles.quickActionCard} onPress={() => router.push('/doctor/profile/guard' as any)}>

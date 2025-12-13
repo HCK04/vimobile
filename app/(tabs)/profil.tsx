@@ -136,11 +136,11 @@ export default function ProfilScreen() {
             <Text style={styles.rowText}>Notifications</Text>
             <Ionicons name="chevron-forward" size={20} color="#9CA3AF" style={{ marginLeft: 'auto' }} />
           </Pressable>
-          <View style={styles.row}>
+          <Pressable style={styles.row} onPress={() => router.push('/patient/privacy' as any)}>
             <Ionicons name="shield-checkmark" size={20} color="#2563EB" />
             <Text style={styles.rowText}>Confidentialité</Text>
             <Ionicons name="chevron-forward" size={20} color="#9CA3AF" style={{ marginLeft: 'auto' }} />
-          </View>
+          </Pressable>
           <View style={styles.row}>
             <Ionicons name="help-circle" size={20} color="#2563EB" />
             <Text style={styles.rowText}>Aide</Text>
@@ -151,6 +151,39 @@ export default function ProfilScreen() {
         <Pressable style={styles.logout} onPress={handleLogout}>
           <Ionicons name="log-out" size={18} color="#EF4444" />
           <Text style={styles.logoutText}>Se déconnecter</Text>
+        </Pressable>
+
+        {/* Delete Account - Required for Play Store */}
+        <Pressable
+          style={styles.deleteAccount}
+          onPress={() => {
+            Alert.alert(
+              'Supprimer mon compte',
+              'Cette action est irréversible. Toutes vos données seront définitivement supprimées. Êtes-vous sûr ?',
+              [
+                { text: 'Annuler', style: 'cancel' },
+                {
+                  text: 'Supprimer définitivement',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await apiClient.delete('/user');
+                      await clearAuth();
+                      await AsyncStorage.removeItem(ONBOARDING_KEY);
+                      Alert.alert('Compte supprimé', 'Votre compte a été supprimé avec succès.');
+                      router.replace('/onboarding');
+                    } catch (error: any) {
+                      const msg = error?.response?.data?.message || 'Impossible de supprimer le compte';
+                      Alert.alert('Erreur', msg);
+                    }
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
+          <Text style={styles.deleteAccountText}>Supprimer mon compte</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -225,5 +258,21 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontWeight: '600',
     fontSize: 12,
+  },
+  deleteAccount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  deleteAccountText: {
+    color: '#9CA3AF',
+    fontWeight: '600',
   },
 });

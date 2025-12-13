@@ -10,7 +10,12 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.visante.mobile"
+      "bundleIdentifier": "com.visante.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Vi-Santé utilise l'appareil photo pour prendre une photo de profil",
+        "NSPhotoLibraryUsageDescription": "Vi-Santé accède à votre galerie pour sélectionner une photo de profil",
+        "NSPhotoLibraryAddUsageDescription": "Vi-Santé peut enregistrer des images dans votre galerie"
+      }
     },
     "android": {
       "adaptiveIcon": {
