@@ -1,338 +1,396 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet, Pressable, Alert, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  Alert,
+  Linking
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../../../lib/apiClient';
+import { Palette } from '../../../constants/Colors';
 
-export default function DoctorAppointmentDetailsScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+export default function AppointmentDetailScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [item, setItem] = useState<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [appointment, setAppointment] = useState<any>(null);
+  const [updating, setUpdating] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.get(`/doctor/appointments/${encodeURIComponent(String(id || ''))}`);
-      setItem(data);
-    } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || 'Impossible de charger le rendez-vous';
-      Alert.alert('Erreur', msg);
-      setItem(null);
+      const { data } = await apiClient.get(`/doctor/appointments/${id}`);
+      setAppointment(data);
+    } catch (e) {
+      setAppointment(null);
     } finally {
       setLoading(false);
     }
+  }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
   };
 
-  useEffect(() => { load(); }, [id]);
-
-  const updateStatus = async (status: 'confirmed' | 'cancelled' | 'completed' | 'missed') => {
-    try {
-      setActionLoading(true);
-      await apiClient.put(`/doctor/appointments/${encodeURIComponent(String(id || ''))}/status`, { status });
-      // Reload appointment data to get updated status from backend
-      await load();
-      const messages: Record<string, string> = {
-        confirmed: 'Rendez-vous confirmé avec succès',
-        cancelled: 'Rendez-vous annulé',
-        completed: 'Rendez-vous marqué comme terminé',
-        missed: 'Rendez-vous marqué comme manqué'
-      };
-      Alert.alert('Succès', messages[status] || 'Statut mis à jour');
-    } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || 'Impossible de mettre à jour le statut';
-      Alert.alert('Erreur', msg);
-    } finally {
-      setActionLoading(false);
+  const getStatusInfo = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed':
+        return { color: Palette.success, label: 'Confirmé', bg: '#ECFDF5', icon: 'checkmark-circle' };
+      case 'pending':
+        return { color: '#F59E0B', label: 'En attente', bg: '#FEF3C7', icon: 'time' };
+      case 'completed':
+        return { color: '#8B5CF6', label: 'Terminé', bg: '#F3E8FF', icon: 'checkmark-done' };
+      case 'cancelled':
+      case 'canceled':
+        return { color: Palette.error, label: 'Annulé', bg: '#FEF2F2', icon: 'close-circle' };
+      default:
+        return { color: Palette.textPlaceholder, label: 'Inconnu', bg: '#F3F4F6', icon: 'help-circle' };
     }
   };
 
-  if (loading) {
+  const updateStatus = async (newStatus: string) => {
+    setUpdating(true);
+    try {
+      await apiClient.post(`/doctor/appointments/${id}/status`, { status: newStatus });
+      await load();
+      Alert.alert('Succès', `Rendez-vous ${newStatus === 'confirmed' ? 'confirmé' : newStatus === 'cancelled' ? 'annulé' : 'mis à jour'}`);
+    } catch (e) {
+      Alert.alert('Erreur', 'Impossible de mettre à jour le statut');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const confirmCancel = () => {
+    Alert.alert(
+      'Annuler le rendez-vous',
+      'Êtes-vous sûr de vouloir annuler ce rendez-vous ?',
+      [
+        { text: 'Non', style: 'cancel' },
+        { text: 'Oui, annuler', style: 'destructive', onPress: () => updateStatus('cancelled') },
+      ]
+    );
+  };
+
+  const callPatient = () => {
+    const phone = appointment?.patient?.phone || appointment?.patient_phone;
+    if (phone) {
+      Linking.openURL(`tel:${phone}`);
+    } else {
+      Alert.alert('Information', 'Numéro de téléphone non disponible');
+    }
+  };
+
+  const whatsappPatient = async () => {
+    const phone = appointment?.patient?.phone || appointment?.patient_phone;
+    if (!phone) {
+      Alert.alert('Information', 'Numéro de téléphone non disponible');
+      return;
+    }
+
+    // Format phone for WhatsApp (remove spaces, dashes, and ensure country code)
+    let formattedPhone = phone.replace(/[\s-()]/g, '');
+
+    // Add Morocco country code if not present (adjust based on your region)
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '212' + formattedPhone.substring(1);
+    } else if (!formattedPhone.startsWith('+') && !formattedPhone.startsWith('212')) {
+      formattedPhone = '212' + formattedPhone;
+    }
+    formattedPhone = formattedPhone.replace('+', '');
+
+    const patientName = appointment.patient?.name || appointment.patient_name || 'Patient';
+    const appointmentDate = appointment.date_time
+      ? new Date(appointment.date_time).toLocaleDateString('fr-FR')
+      : appointment.date || '';
+
+    // Pre-filled message
+    const message = `Bonjour ${patientName},\n\nCeci est un rappel concernant votre rendez-vous${appointmentDate ? ` du ${appointmentDate}` : ''}.\n\nCordialement`;
+
+    const whatsappUrl = `whatsapp://send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(whatsappUrl);
+      if (canOpen) {
+        await Linking.openURL(whatsappUrl);
+      } else {
+        // Fallback to web WhatsApp
+        await Linking.openURL(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`);
+      }
+    } catch (e) {
+      Alert.alert('Erreur', 'Impossible d\'ouvrir WhatsApp. Vérifiez que l\'application est installée.');
+    }
+  };
+
+  if (loading && !refreshing) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563EB" />
+          <ActivityIndicator size="large" color={Palette.primary} />
           <Text style={styles.loadingText}>Chargement...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!item) {
+  if (!appointment) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Rendez-vous</Text>
+        <View style={styles.headerContainer}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={22} color={Palette.text} />
+            </Pressable>
+            <Text style={styles.headerTitle}>Détails</Text>
+          </View>
         </View>
-        <View style={styles.emptyContainer}>
-          <Ionicons name="calendar-outline" size={64} color="#D1D5DB" />
-          <Text style={styles.emptyText}>Rendez-vous introuvable</Text>
-          <Pressable onPress={() => router.back()} style={styles.emptyButton}>
-            <Text style={styles.emptyButtonText}>Retour</Text>
+        <View style={styles.errorContainer}>
+          <View style={styles.errorIconContainer}>
+            <Ionicons name="alert-circle-outline" size={48} color={Palette.error} />
+          </View>
+          <Text style={styles.errorTitle}>Rendez-vous introuvable</Text>
+          <Text style={styles.errorSubtitle}>Ce rendez-vous n'existe pas ou a été supprimé</Text>
+          <Pressable style={styles.retryButton} onPress={load}>
+            <Ionicons name="refresh" size={18} color={Palette.surface} />
+            <Text style={styles.retryButtonText}>Réessayer</Text>
           </Pressable>
         </View>
       </SafeAreaView>
     );
   }
 
-  const statusConfig: Record<string, { color: string; bg: string; label: string; icon: any }> = {
-    pending: { color: '#F59E0B', bg: '#FEF3C7', label: 'En attente', icon: 'time-outline' },
-    confirmed: { color: '#10B981', bg: '#DCFCE7', label: 'Confirmé', icon: 'checkmark-circle' },
-    cancelled: { color: '#EF4444', bg: '#FEE2E2', label: 'Annulé', icon: 'close-circle' },
-    canceled: { color: '#EF4444', bg: '#FEE2E2', label: 'Annulé', icon: 'close-circle' },
-    completed: { color: '#8B5CF6', bg: '#F3E8FF', label: 'Terminé', icon: 'checkmark-done-circle' },
-    missed: { color: '#6B7280', bg: '#F3F4F6', label: 'Manqué', icon: 'alert-circle' },
-  };
-
-  const currentStatus = statusConfig[item.status?.toLowerCase()] || statusConfig.pending;
+  const statusInfo = getStatusInfo(appointment.status);
+  const patientName = appointment.patient?.name || appointment.patient_name || 'Patient';
+  const patientPhone = appointment.patient?.phone || appointment.patient_phone;
+  const patientEmail = appointment.patient?.email || appointment.patient_email;
+  const isPending = appointment.status?.toLowerCase() === 'pending';
+  const isActive = ['pending', 'confirmed'].includes(appointment.status?.toLowerCase());
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Détails du rendez-vous</Text>
-          <Text style={styles.headerSubtitle}>#{item.id}</Text>
+      <View style={styles.headerContainer}>
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            android_ripple={{ color: Palette.primaryLight, radius: 20 }}
+          >
+            <Ionicons name="arrow-back" size={22} color={Palette.text} />
+          </Pressable>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>Détails du rendez-vous</Text>
+          </View>
         </View>
+        <View style={styles.accentLine} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Status Badge */}
-        <View style={styles.section}>
-          <View style={[styles.statusBanner, { backgroundColor: currentStatus.bg }]}>
-            <Ionicons name={currentStatus.icon} size={24} color={currentStatus.color} />
-            <Text style={[styles.statusBannerText, { color: currentStatus.color }]}>
-              {currentStatus.label}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Palette.primary]}
+            tintColor={Palette.primary}
+          />
+        }
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Status Card */}
+        <View style={[styles.statusCard, { borderLeftColor: statusInfo.color }]}>
+          <View style={[styles.statusIconContainer, { backgroundColor: statusInfo.bg }]}>
+            <Ionicons name={statusInfo.icon as any} size={24} color={statusInfo.color} />
+          </View>
+          <View style={styles.statusTextContainer}>
+            <Text style={styles.statusLabel}>Statut</Text>
+            <Text style={[styles.statusValue, { color: statusInfo.color }]}>
+              {statusInfo.label}
             </Text>
           </View>
         </View>
 
-        {/* Date & Time Card */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardIconContainer}>
-                <Ionicons name="calendar" size={24} color="#2563EB" />
-              </View>
-              <Text style={styles.cardTitle}>Date et heure</Text>
-            </View>
-            <View style={styles.cardContent}>
-              <View style={styles.infoRow}>
-                <Ionicons name="calendar-outline" size={20} color="#6B7280" />
-                <Text style={styles.infoLabel}>Date</Text>
-                <Text style={styles.infoValue}>{item.date || '—'}</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.infoRow}>
-                <Ionicons name="time-outline" size={20} color="#6B7280" />
-                <Text style={styles.infoLabel}>Heure</Text>
-                <Text style={styles.infoValue}>{item.time || '—'}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
         {/* Patient Info Card */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIconContainer, { backgroundColor: '#DCFCE7' }]}>
-                <Ionicons name="person" size={24} color="#10B981" />
-              </View>
-              <Text style={styles.cardTitle}>Informations patient</Text>
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIconContainer}>
+              <Ionicons name="person" size={20} color={Palette.primary} />
             </View>
-            <View style={styles.cardContent}>
-              <View style={styles.infoRow}>
-                <Ionicons name="person-outline" size={20} color="#6B7280" />
-                <Text style={styles.infoLabel}>Nom</Text>
-                <Text style={styles.infoValue}>{item.patient?.name || item.patient_name || '—'}</Text>
-              </View>
-              {(item.patient_phone || item.patient?.phone) && (
-                <>
-                  <View style={styles.divider} />
-                  <View style={styles.infoRow}>
-                    <Ionicons name="call-outline" size={20} color="#6B7280" />
-                    <Text style={styles.infoLabel}>Téléphone</Text>
-                    <Text style={styles.infoValue}>{item.patient_phone || item.patient?.phone}</Text>
-                  </View>
-                </>
+            <Text style={styles.cardTitle}>Patient</Text>
+          </View>
+          <View style={styles.cardDivider} />
+
+          <View style={styles.patientRow}>
+            <View style={styles.avatarLarge}>
+              <Text style={styles.avatarLargeText}>
+                {patientName[0].toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.patientInfo}>
+              <Text style={styles.patientName}>{patientName}</Text>
+              {patientPhone && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="call-outline" size={14} color={Palette.textSecondary} />
+                  <Text style={styles.infoText}>{patientPhone}</Text>
+                </View>
               )}
-              {(item.patient_email || item.patient?.email) && (
-                <>
-                  <View style={styles.divider} />
-                  <View style={styles.infoRow}>
-                    <Ionicons name="mail-outline" size={20} color="#6B7280" />
-                    <Text style={styles.infoLabel}>Email</Text>
-                    <Text style={styles.infoValue}>{item.patient_email || item.patient?.email}</Text>
-                  </View>
-                </>
+              {patientEmail && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="mail-outline" size={14} color={Palette.textSecondary} />
+                  <Text style={styles.infoText}>{patientEmail}</Text>
+                </View>
               )}
             </View>
           </View>
+
+          {patientPhone && (
+            <View style={styles.contactButtonsRow}>
+              <Pressable style={styles.callButton} onPress={callPatient}>
+                <Ionicons name="call" size={18} color={Palette.surface} />
+                <Text style={styles.callButtonText}>Appeler</Text>
+              </Pressable>
+              <Pressable style={styles.whatsappButton} onPress={whatsappPatient}>
+                <Ionicons name="logo-whatsapp" size={18} color={Palette.surface} />
+                <Text style={styles.whatsappButtonText}>WhatsApp</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {/* Appointment Details Card */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIconContainer, { backgroundColor: '#FEF3C7' }]}>
-                <Ionicons name="document-text" size={24} color="#F59E0B" />
-              </View>
-              <Text style={styles.cardTitle}>Détails de la consultation</Text>
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardIconContainer, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="calendar" size={20} color="#F59E0B" />
             </View>
-            <View style={styles.cardContent}>
-              <View style={styles.infoRow}>
-                <Ionicons name="clipboard-outline" size={20} color="#6B7280" />
-                <Text style={styles.infoLabel}>Motif</Text>
-                <Text style={[styles.infoValue, { flex: 2 }]}>{item.reason || 'Non spécifié'}</Text>
+            <Text style={styles.cardTitle}>Détails</Text>
+          </View>
+          <View style={styles.cardDivider} />
+
+          <View style={styles.detailsGrid}>
+            <View style={styles.detailItem}>
+              <Ionicons name="calendar-outline" size={18} color={Palette.textSecondary} />
+              <View style={styles.detailContent}>
+                <Text style={styles.detailLabel}>Date</Text>
+                <Text style={styles.detailValue}>
+                  {appointment.date_time
+                    ? new Date(appointment.date_time).toLocaleDateString('fr-FR', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    })
+                    : appointment.date || '—'}
+                </Text>
               </View>
-              {item.notes && (
-                <>
-                  <View style={styles.divider} />
-                  <View style={styles.infoRow}>
-                    <Ionicons name="chatbox-outline" size={20} color="#6B7280" />
-                    <Text style={styles.infoLabel}>Notes</Text>
-                    <Text style={[styles.infoValue, { flex: 2 }]}>{item.notes}</Text>
-                  </View>
-                </>
-              )}
-              {item.price && (
-                <>
-                  <View style={styles.divider} />
-                  <View style={styles.infoRow}>
-                    <Ionicons name="cash-outline" size={20} color="#6B7280" />
-                    <Text style={styles.infoLabel}>Prix</Text>
-                    <Text style={styles.infoValue}>{item.price} DH</Text>
-                  </View>
-                </>
-              )}
             </View>
+
+            <View style={styles.detailItem}>
+              <Ionicons name="time-outline" size={18} color={Palette.textSecondary} />
+              <View style={styles.detailContent}>
+                <Text style={styles.detailLabel}>Heure</Text>
+                <Text style={styles.detailValue}>
+                  {appointment.date_time
+                    ? new Date(appointment.date_time).toLocaleTimeString('fr-FR', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                    : appointment.time || appointment.time_start || '—'}
+                </Text>
+              </View>
+            </View>
+
+            {appointment.service && (
+              <View style={styles.detailItem}>
+                <Ionicons name="medical-outline" size={18} color={Palette.textSecondary} />
+                <View style={styles.detailContent}>
+                  <Text style={styles.detailLabel}>Service</Text>
+                  <Text style={styles.detailValue}>{appointment.service}</Text>
+                </View>
+              </View>
+            )}
+
+            {appointment.duration && (
+              <View style={styles.detailItem}>
+                <Ionicons name="hourglass-outline" size={18} color={Palette.textSecondary} />
+                <View style={styles.detailContent}>
+                  <Text style={styles.detailLabel}>Durée</Text>
+                  <Text style={styles.detailValue}>{appointment.duration} min</Text>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
-        {/* Annonce Info (if exists) */}
-        {item.annonce && (
-          <View style={styles.section}>
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.cardIconContainer, { backgroundColor: '#F3E8FF' }]}>
-                  <Ionicons name="pricetag" size={24} color="#8B5CF6" />
-                </View>
-                <Text style={styles.cardTitle}>Offre associée</Text>
+        {/* Reason Card */}
+        {appointment.reason && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIconContainer, { backgroundColor: '#F3E8FF' }]}>
+                <Ionicons name="document-text" size={20} color="#8B5CF6" />
               </View>
-              <View style={styles.cardContent}>
-                <View style={styles.infoRow}>
-                  <Ionicons name="megaphone-outline" size={20} color="#6B7280" />
-                  <Text style={styles.infoLabel}>Titre</Text>
-                  <Text style={[styles.infoValue, { flex: 2 }]}>{item.annonce.title}</Text>
-                </View>
-                {item.annonce.description && (
-                  <>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                      <Ionicons name="information-circle-outline" size={20} color="#6B7280" />
-                      <Text style={styles.infoLabel}>Description</Text>
-                      <Text style={[styles.infoValue, { flex: 2 }]}>{item.annonce.description}</Text>
-                    </View>
-                  </>
-                )}
-                {item.annonce.pourcentage_reduction > 0 && (
-                  <>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                      <Ionicons name="gift-outline" size={20} color="#6B7280" />
-                      <Text style={styles.infoLabel}>Réduction</Text>
-                      <Text style={styles.infoValue}>{item.annonce.pourcentage_reduction}%</Text>
-                    </View>
-                  </>
-                )}
-              </View>
+              <Text style={styles.cardTitle}>Motif de consultation</Text>
             </View>
+            <View style={styles.cardDivider} />
+            <Text style={styles.reasonText}>{appointment.reason}</Text>
+          </View>
+        )}
+
+        {/* Notes Card */}
+        {appointment.notes && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIconContainer, { backgroundColor: Palette.successBg }]}>
+                <Ionicons name="create" size={20} color={Palette.success} />
+              </View>
+              <Text style={styles.cardTitle}>Notes</Text>
+            </View>
+            <View style={styles.cardDivider} />
+            <Text style={styles.reasonText}>{appointment.notes}</Text>
           </View>
         )}
 
         {/* Action Buttons */}
-        <View style={styles.section}>
-          {item.status === 'pending' && (
-            <>
-              <Text style={styles.actionsTitle}>Actions</Text>
-              <View style={styles.actionsContainer}>
-                <Pressable 
-                  disabled={actionLoading} 
-                  onPress={() => updateStatus('confirmed')} 
-                  style={[styles.actionButton, styles.confirmButton, actionLoading && styles.actionButtonDisabled]}
-                >
-                  {actionLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                      <Text style={styles.actionButtonText}>Confirmer</Text>
-                    </>
-                  )}
-                </Pressable>
-                <Pressable 
-                  disabled={actionLoading} 
-                  onPress={() => updateStatus('cancelled')} 
-                  style={[styles.actionButton, styles.cancelButton, actionLoading && styles.actionButtonDisabled]}
-                >
-                  {actionLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="close-circle" size={20} color="#fff" />
-                      <Text style={styles.actionButtonText}>Refuser</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
-            </>
-          )}
-
-          {item.status === 'confirmed' && (
-            <>
-              <Text style={styles.actionsTitle}>Marquer comme</Text>
-              <View style={styles.actionsContainer}>
-                <Pressable 
-                  disabled={actionLoading} 
-                  onPress={() => updateStatus('completed')} 
-                  style={[styles.actionButton, styles.completeButton, actionLoading && styles.actionButtonDisabled]}
-                >
-                  {actionLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark-done-circle" size={20} color="#fff" />
-                      <Text style={styles.actionButtonText}>Terminé</Text>
-                    </>
-                  )}
-                </Pressable>
-                <Pressable 
-                  disabled={actionLoading} 
-                  onPress={() => updateStatus('missed')} 
-                  style={[styles.actionButton, styles.missedButton, actionLoading && styles.actionButtonDisabled]}
-                >
-                  {actionLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="alert-circle" size={20} color="#fff" />
-                      <Text style={styles.actionButtonText}>Manqué</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
-            </>
-          )}
-        </View>
+        {isActive && (
+          <View style={styles.actionsContainer}>
+            {isPending && (
+              <Pressable
+                style={[styles.actionButton, styles.confirmButton]}
+                onPress={() => updateStatus('confirmed')}
+                disabled={updating}
+              >
+                {updating ? (
+                  <ActivityIndicator size="small" color={Palette.surface} />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color={Palette.surface} />
+                    <Text style={styles.actionButtonText}>Confirmer</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+            <Pressable
+              style={[styles.actionButton, styles.cancelButton]}
+              onPress={confirmCancel}
+              disabled={updating}
+            >
+              <Ionicons name="close-circle" size={20} color={Palette.error} />
+              <Text style={[styles.actionButtonText, { color: Palette.error }]}>Annuler</Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -341,188 +399,312 @@ export default function DoctorAppointmentDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Palette.background
   },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
+    justifyContent: 'center'
   },
   loadingText: {
     marginTop: 16,
-    fontSize: 16,
-    color: '#6B7280',
+    fontSize: 15,
+    color: Palette.textSecondary
   },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  emptyButton: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  emptyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+
+  // Header
+  headerContainer: {
+    backgroundColor: Palette.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Palette.border,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12
   },
-  backButton: {
+  backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: Palette.background,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: Palette.border,
+  },
+  headerTextContainer: {
+    flex: 1,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#111827',
+    color: Palette.text,
+    letterSpacing: -0.3
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 2,
+  accentLine: {
+    height: 3,
+    backgroundColor: Palette.primary,
+    marginLeft: 68,
+    marginBottom: 0,
+    borderRadius: 2,
+    width: 40
   },
-  section: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-  },
-  statusBanner: {
-    flexDirection: 'row',
+
+  // Error state
+  errorContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
+    padding: 32,
   },
-  statusBannerText: {
+  errorIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Palette.errorBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Palette.text,
+    marginTop: 8
+  },
+  errorSubtitle: {
+    fontSize: 14,
+    color: Palette.textSecondary,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Palette.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Palette.surface,
+    marginLeft: 8,
+  },
+
+  // Scroll content
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+
+  // Status card
+  statusCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Palette.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Palette.border,
+    borderLeftWidth: 4,
+  },
+  statusIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  statusTextContainer: {
+    flex: 1,
+  },
+  statusLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Palette.textSecondary,
+    marginBottom: 2,
+  },
+  statusValue: {
     fontSize: 18,
     fontWeight: '700',
   },
+
+  // Card
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Palette.surface,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Palette.border,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
   cardIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#EFF6FF',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: Palette.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 12,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: Palette.text,
   },
-  cardContent: {
-    padding: 16,
+  cardDivider: {
+    height: 1,
+    backgroundColor: Palette.border,
+    marginVertical: 14,
+  },
+
+  // Patient
+  patientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarLarge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Palette.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Palette.primary,
+    marginRight: 14,
+  },
+  avatarLargeText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Palette.primary,
+  },
+  patientInfo: {
+    flex: 1,
+  },
+  patientName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Palette.text,
+    marginBottom: 4,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
+    marginTop: 4,
   },
-  infoLabel: {
-    fontSize: 14,
-    color: '#6B7280',
-    flex: 1,
+  infoText: {
+    fontSize: 13,
+    color: Palette.textSecondary,
+    marginLeft: 6,
   },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    flex: 1,
-    textAlign: 'right',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F3F4F6',
-    marginVertical: 8,
-  },
-  actionsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 32,
-  },
-  actionButton: {
+  callButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
+    backgroundColor: Palette.success,
+    paddingVertical: 12,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    marginRight: 8,
   },
-  actionButtonDisabled: {
-    opacity: 0.6,
+  callButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Palette.surface,
+    marginLeft: 8,
+  },
+  contactButtonsRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+  },
+  whatsappButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#25D366', // WhatsApp green
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  whatsappButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Palette.surface,
+    marginLeft: 8,
+  },
+
+  // Details grid
+  detailsGrid: {
+    // No gap needed
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Palette.border,
+  },
+  detailContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Palette.textSecondary,
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Palette.text,
+  },
+
+  // Reason
+  reasonText: {
+    fontSize: 15,
+    color: Palette.text,
+    lineHeight: 22,
+  },
+
+  // Actions
+  actionsContainer: {
+    marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  confirmButton: {
+    backgroundColor: Palette.success,
+  },
+  cancelButton: {
+    backgroundColor: Palette.errorBg,
+    borderWidth: 1.5,
+    borderColor: Palette.error,
   },
   actionButtonText: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  confirmButton: {
-    backgroundColor: '#10B981',
-  },
-  cancelButton: {
-    backgroundColor: '#EF4444',
-  },
-  completeButton: {
-    backgroundColor: '#8B5CF6',
-  },
-  missedButton: {
-    backgroundColor: '#6B7280',
+    fontWeight: '600',
+    color: Palette.surface,
+    marginLeft: 8,
   },
 });

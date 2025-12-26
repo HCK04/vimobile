@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,13 +15,13 @@ import { useRouter } from 'expo-router';
 import { apiClient } from '../../lib/apiClient';
 import { getAuth } from '../../lib/api';
 import { useSearch } from '../../lib/useSearch';
-import { DevTools } from '@/components/DevTools';
-import { PersonalizedHeader } from '@/components/PersonalizedHeader';
-import { NextAppointmentCard } from '@/components/NextAppointmentCard';
-import { QuickActionsGrid } from '@/components/QuickActionsGrid';
-import { UserStatsRow } from '@/components/UserStatsRow';
-import CityBottomSheet from '@/components/CityBottomSheet';
-import FiltersChipRow from '@/components/FiltersChipRow';
+import { Palette } from '../../constants/Colors';
+import { PersonalizedHeader } from '../../components/PersonalizedHeader';
+import { NextAppointmentCard } from '../../components/NextAppointmentCard';
+import { QuickActionsGrid } from '../../components/QuickActionsGrid';
+import { UserStatsRow } from '../../components/UserStatsRow';
+import CityBottomSheet from '../../components/CityBottomSheet';
+import FiltersChipRow from '../../components/FiltersChipRow';
 
 const MOROCCAN_CITIES = [
   'Casablanca', 'Rabat', 'Fès', 'Marrakech', 'Agadir', 'Tanger',
@@ -51,7 +51,7 @@ function createSlug(name: string) {
 export default function AccueilScreen() {
   const router = useRouter();
   const { getSuggestions } = useSearch();
-  
+
   // Search state
   const [query, setQuery] = useState('');
   const [cityQuery, setCityQuery] = useState('Toutes les villes');
@@ -66,6 +66,7 @@ export default function AccueilScreen() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Get next upcoming appointment
   const nextAppointment = appointments.find((apt: any) => {
@@ -88,53 +89,46 @@ export default function AccueilScreen() {
     return MOROCCAN_CITIES.filter((c) => c.toLowerCase().includes(q));
   }, [cityQuery]);
 
-  // Load user from backend
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const { data } = await apiClient.get('/user/profile');
-        setUser(data);
-      } catch (error) {
-        console.error('Failed to load user:', error);
-        // Fallback to auth state
-        const { user: u } = getAuth();
-        if (u) setUser(u);
-      }
-    };
-    loadUser();
+  // Consolidated data loading function
+  const loadAllData = useCallback(async () => {
+    try {
+      // Load user
+      const userRes = await apiClient.get('/user/profile');
+      setUser(userRes.data);
+    } catch {
+      const { user: u } = getAuth();
+      if (u) setUser(u);
+    }
+
+    try {
+      // Load appointments
+      const aptsRes = await apiClient.get('/appointments');
+      setAppointments(aptsRes.data || []);
+    } catch {
+      setAppointments([]);
+    }
+
+    try {
+      // Load notifications
+      const notifRes = await apiClient.get('/notifications');
+      const count = Array.isArray(notifRes.data) ? notifRes.data.filter((n: any) => !n?.read_at).length : 0;
+      setUnreadNotifications(count);
+    } catch {
+      setUnreadNotifications(0);
+    }
   }, []);
 
-  // Load appointments from backend
+  // Initial load
   useEffect(() => {
-    const loadAppointments = async () => {
-      try {
-        setLoadingAppointments(true);
-        const { data } = await apiClient.get('/appointments');
-        setAppointments(data || []);
-      } catch (error) {
-        console.error('Failed to load appointments:', error);
-        setAppointments([]);
-      } finally {
-        setLoadingAppointments(false);
-      }
-    };
-    loadAppointments();
-  }, []);
+    loadAllData();
+  }, [loadAllData]);
 
-  // Load unread notifications count
-  useEffect(() => {
-    const loadNotifications = async () => {
-      try {
-        const { data } = await apiClient.get('/notifications');
-        const count = Array.isArray(data) ? data.filter((n: any) => !n?.read_at).length : 0;
-        setUnreadNotifications(count);
-      } catch (error) {
-        // Silent fail, keep 0
-        setUnreadNotifications(0);
-      }
-    };
-    loadNotifications();
-  }, []);
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadAllData();
+    setRefreshing(false);
+  }, [loadAllData]);
 
   // Build suggestions using backend search
   useEffect(() => {
@@ -149,16 +143,30 @@ export default function AccueilScreen() {
       setLoadingSuggestions(true);
       try {
         const results = await getSuggestions(q, 15);
-        
+
         const formattedSuggestions = results.map((item: any) => {
           const name = item.name || 'Professionnel';
-          const specialty = item.specialty || item.profile_data?.specialty || 'Médecine générale';
+          let specialtyRaw = item.specialty || item.profile_data?.specialty || 'Médecine générale';
+
+          // Handle arrays, objects, or malformed strings
+          if (Array.isArray(specialtyRaw)) {
+            specialtyRaw = specialtyRaw[0] || 'Médecine générale';
+          } else if (typeof specialtyRaw === 'object') {
+            specialtyRaw = specialtyRaw.name || 'Médecine générale';
+          } else if (typeof specialtyRaw === 'string') {
+            // Clean up bracket notation like ["value"]
+            specialtyRaw = specialtyRaw
+              .replace(/^\["?|"?\]$/g, '')
+              .replace(/^\*|\*$/g, '')
+              .trim() || 'Médecine générale';
+          }
+
           const location = item.ville || item.profile_data?.ville || '';
-          
+
           return {
             id: item.id,
             name,
-            specialty: typeof specialty === 'string' ? specialty : 'Médecine générale',
+            specialty: String(specialtyRaw),
             location,
             profile: item,
           };
@@ -174,21 +182,21 @@ export default function AccueilScreen() {
         setLoadingSuggestions(false);
       }
     }, 300);
-    
+
     return () => clearTimeout(timeoutId);
   }, [query, getSuggestions]);
 
   const onSearch = () => {
     const city = (selectedCity || cityQuery || '').trim();
     const searchQuery = query.trim();
-    
+
     // Navigate to search page with parameters
-    router.push({ 
-      pathname: '/recherche', 
-      params: { 
+    router.push({
+      pathname: '/recherche',
+      params: {
         query: searchQuery || undefined,
         city: city && city.toLowerCase() !== 'toutes les villes' ? city : undefined,
-      } 
+      }
     } as any);
   };
 
@@ -199,24 +207,32 @@ export default function AccueilScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Personalized Header */}
-      <PersonalizedHeader 
-        userName={user?.prenom || user?.first_name || user?.name?.split(' ')[0]} 
-        unreadCount={unreadMessages} 
+      <PersonalizedHeader
+        userName={user?.prenom || user?.first_name || user?.name?.split(' ')[0]}
+        unreadCount={unreadMessages}
       />
 
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Palette.primary]}
+            tintColor={Palette.primary}
+          />
+        }
       >
         {/* Search Card */}
         <View style={styles.searchSection}>
           <Text style={styles.searchTitle}>Rechercher un médecin</Text>
-          
+
           <View style={styles.searchCard}>
             {/* Query input */}
             <View style={styles.inputWrap}>
-              <Ionicons name="search" size={20} color="#6B7280" style={styles.inputIcon} />
+              <Ionicons name="search" size={20} color={Palette.textSecondary} style={styles.inputIcon} />
               <TextInput
                 value={query}
                 onChangeText={(t) => {
@@ -225,7 +241,7 @@ export default function AccueilScreen() {
                 }}
                 onFocus={() => setShowSuggestions(true)}
                 placeholder="Nom, spécialité..."
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={Palette.textPlaceholder}
                 style={styles.textInput}
                 returnKeyType="search"
                 onSubmitEditing={onSearch}
@@ -240,18 +256,23 @@ export default function AccueilScreen() {
                           onPress={() => {
                             try {
                               const nameSlug = createSlug(item.name);
-                              router.push({ 
-                                pathname: '/recherche/profil/[nameSlug]', 
-                                params: { nameSlug } 
+                              // Pass id and type like recherche/index.tsx does
+                              router.push({
+                                pathname: '/recherche/profil/[nameSlug]',
+                                params: {
+                                  nameSlug,
+                                  id: String(item.id),
+                                  type: item.profile?.type || item.profile?.role || 'medecin'
+                                }
                               } as any);
-                            } catch {}
+                            } catch { }
                             setQuery(item.name);
                             setShowSuggestions(false);
                           }}
                           style={styles.suggestionItem}
                         >
                           <View style={styles.suggestionIcon}>
-                            <FontAwesome5 name="user-md" size={16} color="#2563EB" />
+                            <FontAwesome5 name="user-md" size={16} color={Palette.primary} />
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={styles.suggestionTitle} numberOfLines={1}>
@@ -261,9 +282,9 @@ export default function AccueilScreen() {
                               {item.specialty}
                             </Text>
                             {!!item.location && (
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                <Ionicons name="location" size={12} color="#9CA3AF" />
-                                <Text style={styles.suggestionLoc} numberOfLines={1}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                                <Ionicons name="location" size={12} color={Palette.textPlaceholder} />
+                                <Text style={[styles.suggestionLoc, { marginLeft: 4 }]} numberOfLines={1}>
                                   {item.location}
                                 </Text>
                               </View>
@@ -278,16 +299,15 @@ export default function AccueilScreen() {
               )}
             </View>
 
-            {/* City input -> opens bottom sheet */}
             <View style={[styles.inputWrap, { marginTop: 12 }]}>
-              <Ionicons name="location-outline" size={20} color="#6B7280" style={styles.inputIcon} />
+              <Ionicons name="location-outline" size={20} color={Palette.textSecondary} style={styles.inputIcon} />
               <Pressable onPress={() => setCitySheetVisible(true)}>
                 <View pointerEvents="none">
                   <TextInput
                     value={cityQuery}
                     editable={false}
                     placeholder="Ville"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={Palette.textPlaceholder}
                     style={styles.textInput}
                   />
                 </View>
@@ -296,28 +316,30 @@ export default function AccueilScreen() {
 
             {/* Search buttons */}
             <View style={styles.searchButtons}>
-              <Pressable onPress={onUseLocation} style={styles.locationBtn}>
-                <Ionicons name="navigate" size={20} color="#3B82F6" />
+              <Pressable onPress={onUseLocation} style={styles.locationBtn} accessibilityRole="button" accessibilityLabel="Utiliser ma position">
+                <Ionicons name="navigate" size={20} color={Palette.primary} />
               </Pressable>
-              <Pressable onPress={onSearch} style={styles.searchCta}>
+              <Pressable onPress={onSearch} style={styles.searchCta} accessibilityRole="button" accessibilityLabel="Lancer la recherche">
                 <Text style={styles.searchCtaText}>Rechercher</Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <Ionicons name="arrow-forward" size={18} color={Palette.surface} />
               </Pressable>
             </View>
           </View>
-          {/* Quick filter chips */}
-          <FiltersChipRow
-            onSelect={(chip) => {
-              const city = (selectedCity || cityQuery || '').trim();
-              router.push({
-                pathname: '/recherche',
-                params: {
-                  query: chip.label,
-                  city: city && city.toLowerCase() !== 'toutes les villes' ? city : undefined,
-                },
-              } as any);
-            }}
-          />
+          {/* Quick filter chips - hide when suggestions visible to prevent overlap */}
+          {!showSuggestions && (
+            <FiltersChipRow
+              onSelect={(chip) => {
+                const city = (selectedCity || cityQuery || '').trim();
+                router.push({
+                  pathname: '/recherche',
+                  params: {
+                    query: chip.label,
+                    city: city && city.toLowerCase() !== 'toutes les villes' ? city : undefined,
+                  },
+                } as any);
+              }}
+            />
+          )}
         </View>
 
         {/* Dashboard Components */}
@@ -325,16 +347,16 @@ export default function AccueilScreen() {
           id: String(nextAppointment.id),
           doctorName: nextAppointment.doctor_name,
           specialty: nextAppointment.reason || 'Consultation',
-          date: new Date(`${nextAppointment.date}T${nextAppointment.time}`).toLocaleDateString('fr-FR', { 
-            weekday: 'long', 
-            day: 'numeric', 
-            month: 'long' 
+          date: new Date(`${nextAppointment.date}T${nextAppointment.time}`).toLocaleDateString('fr-FR', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long'
           }),
           time: nextAppointment.time,
           location: nextAppointment.provider_type || 'Cabinet médical',
         } : undefined} />
         <QuickActionsGrid />
-        <UserStatsRow 
+        <UserStatsRow
           upcomingAppointments={upcomingAppointments}
           unreadMessages={unreadMessages}
           favoriteDoctors={favoriteDoctors}
@@ -345,15 +367,23 @@ export default function AccueilScreen() {
           <Text style={styles.sectionTitle}>Catégories populaires</Text>
           <View style={styles.categoryGrid}>
             {[
-              { icon: 'medical', label: 'Médecin', color: '#3B82F6', bg: '#EFF6FF' },
-              { icon: 'fitness', label: 'Dentiste', color: '#10B981', bg: '#D1FAE5' },
-              { icon: 'heart', label: 'Cardiologue', color: '#EC4899', bg: '#FCE7F3' },
-              { icon: 'body', label: 'Kiné', color: '#F59E0B', bg: '#FEF3C7' },
+              { icon: 'medical', label: 'Médecin', query: 'generaliste', color: Palette.primary, bg: Palette.primaryLight },
+              { icon: 'fitness', label: 'Dentiste', query: 'dentiste', color: '#10B981', bg: '#D1FAE5' },
+              { icon: 'heart', label: 'Cardiologue', query: 'cardiologue', color: '#EC4899', bg: '#FCE7F3' },
+              { icon: 'body', label: 'Kiné', query: 'kinesitherapeute', color: '#F59E0B', bg: '#FEF3C7' },
             ].map((cat) => (
-              <Pressable 
+              <Pressable
                 key={cat.label}
-                style={styles.categoryCard}
-                onPress={() => router.push('/recherche' as any)}
+                style={({ pressed }) => [
+                  styles.categoryCard,
+                  pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }
+                ]}
+                onPress={() => router.push({
+                  pathname: '/recherche',
+                  params: { query: cat.query }
+                } as any)}
+                accessibilityRole="button"
+                accessibilityLabel={`Rechercher ${cat.label}`}
               >
                 <View style={[styles.categoryIcon, { backgroundColor: cat.bg }]}>
                   <Ionicons name={cat.icon as any} size={24} color={cat.color} />
@@ -368,7 +398,6 @@ export default function AccueilScreen() {
         <View style={{ height: 32 }} />
       </ScrollView>
 
-      <DevTools />
       {/* City bottom sheet */}
       <CityBottomSheet
         visible={citySheetVisible}
@@ -387,7 +416,7 @@ export default function AccueilScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Palette.background,
   },
   scrollView: {
     flex: 1,
@@ -400,20 +429,20 @@ const styles = StyleSheet.create({
   searchTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
+    color: Palette.text,
     marginBottom: 16,
   },
   searchCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Palette.surface,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: Palette.border,
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   inputWrap: {
     position: 'relative',
@@ -430,33 +459,32 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     fontSize: 15,
-    color: '#111827',
-    backgroundColor: '#F8FAFC',
+    color: Palette.text,
+    backgroundColor: Palette.background,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: Palette.border,
   },
   suggestions: {
     position: 'absolute',
     top: 56,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Palette.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: Palette.border,
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 6,
     zIndex: 50,
     shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
   suggestionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     paddingVertical: 10,
     paddingHorizontal: 6,
   },
@@ -464,61 +492,62 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: Palette.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 12,
   },
   suggestionTitle: {
-    color: '#111827',
+    color: Palette.text,
     fontWeight: '600',
     fontSize: 14,
   },
   suggestionSub: {
-    color: '#6B7280',
+    color: Palette.textSecondary,
     fontSize: 12,
     marginTop: 2,
   },
   suggestionLoc: {
-    color: '#9CA3AF',
+    color: Palette.textPlaceholder,
     fontSize: 11,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: Palette.border,
   },
   searchButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     marginTop: 16,
   },
   locationBtn: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: Palette.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 12,
   },
   searchCta: {
     flex: 1,
-    backgroundColor: '#2563EB',
+    backgroundColor: Palette.primary,
     paddingVertical: 14,
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#1D4ED8',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowColor: Palette.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    elevation: 4,
   },
   searchCtaText: {
-    color: '#FFFFFF',
+    color: Palette.surface,
     fontWeight: '700',
     fontSize: 15,
+    marginRight: 8,
   },
   categorySection: {
     paddingHorizontal: 16,
@@ -527,22 +556,28 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
+    color: Palette.text,
     marginBottom: 12,
   },
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    justifyContent: 'space-between',
   },
   categoryCard: {
     width: '48%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Palette.surface,
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: Palette.border,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   categoryIcon: {
     width: 56,
@@ -555,6 +590,6 @@ const styles = StyleSheet.create({
   categoryLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#374151',
+    color: Palette.text,
   },
 });

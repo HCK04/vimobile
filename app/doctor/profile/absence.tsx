@@ -10,11 +10,11 @@ export default function AbsenceScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  
+
   // Absence dates
   const [absenceStartDate, setAbsenceStartDate] = useState('');
   const [absenceEndDate, setAbsenceEndDate] = useState('');
-  
+
   // Vacation mode
   const [vacationMode, setVacationMode] = useState(false);
   const [vacationAutoReactivateDate, setVacationAutoReactivateDate] = useState('');
@@ -33,7 +33,7 @@ export default function AbsenceScreen() {
         data.parapharmacieProfile ||
         data.laboAnalyseProfile ||
         data.centreRadiologieProfile || {};
-      
+
       setAbsenceStartDate(profile.absence_start_date || '');
       setAbsenceEndDate(profile.absence_end_date || '');
       // Backend uses disponible inversely: vacation_mode = !disponible
@@ -268,7 +268,7 @@ export default function AbsenceScreen() {
             {vacationMode && (
               <>
                 <View style={styles.divider} />
-                
+
                 <View>
                   <DatePickerInput
                     label="Réactivation automatique (optionnel)"

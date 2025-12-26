@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 import { setAuth, getAuth } from '../lib/api';
 
 const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
@@ -10,6 +11,10 @@ const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
 export function DevTools() {
   const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
+
+  // Only show in development mode AND if not explicitly disabled
+  // This ensures it won't show in production builds or Expo Go in production
+  const isDevelopment = __DEV__ && Constants.expoConfig?.extra?.enableDevTools !== false;
 
   const resetOnboarding = async () => {
     try {
@@ -118,8 +123,8 @@ export function DevTools() {
     );
   };
 
-  if (!__DEV__) {
-    return null; // Only show in development mode
+  if (!isDevelopment) {
+    return null; // Hide completely in production
   }
 
   return (
@@ -165,7 +170,7 @@ export function DevTools() {
           {/* Auth Testing */}
           <View style={styles.divider} />
           <Text style={styles.sectionTitle}>Auth & Doctor Testing</Text>
-          
+
           <Pressable style={[styles.button, { backgroundColor: '#EFF6FF' }]} onPress={mockDoctorLogin}>
             <Ionicons name="person-add" size={20} color="#2563EB" />
             <Text style={[styles.buttonText, { color: '#2563EB' }]}>Mock Doctor Login</Text>

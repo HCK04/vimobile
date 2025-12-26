@@ -12,9 +12,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.visante.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "Vi-Santé utilise l'appareil photo pour prendre une photo de profil",
+        "NSCameraUsageDescription": "Vi-Santé utilise l'appareil photo pour scanner les QR codes et prendre des photos de profil",
         "NSPhotoLibraryUsageDescription": "Vi-Santé accède à votre galerie pour sélectionner une photo de profil",
-        "NSPhotoLibraryAddUsageDescription": "Vi-Santé peut enregistrer des images dans votre galerie"
+        "NSPhotoLibraryAddUsageDescription": "Vi-Santé peut enregistrer des images dans votre galerie",
+        "NSUserTrackingUsageDescription": "Vi-Santé utilise ces informations pour améliorer votre expérience et personnaliser les recommandations de santé"
       }
     },
     "android": {
@@ -50,7 +51,11 @@
           "color": "#2563EB",
           "mode": "production"
         }
-      ]
+      ],
+      [
+        "expo-tracking-transparency"
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

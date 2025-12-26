@@ -9,12 +9,15 @@ import {
   Alert,
   TextInput,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../lib/api';
 import { apiClient } from '../../lib/apiClient';
+import { Palette } from '../../constants/Colors';
 
 const { width } = Dimensions.get('window');
 
@@ -235,7 +238,7 @@ export default function BookAppointmentScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#2563EB" />
+          <ActivityIndicator size="large" color={Palette.primary} />
           <Text style={styles.loadingText}>Chargement...</Text>
         </View>
       </SafeAreaView>
@@ -245,8 +248,8 @@ export default function BookAppointmentScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={handleBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
+        <Pressable onPress={handleBack} style={styles.backButton} hitSlop={12} accessibilityRole="button" accessibilityLabel="Retour">
+          <Ionicons name="arrow-back" size={24} color={Palette.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Nouveau rendez-vous</Text>
@@ -260,205 +263,211 @@ export default function BookAppointmentScreen() {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {currentStep === 1 && (
-          <View style={styles.stepContainer}>
-            <View style={styles.stepHeader}>
-              <View style={styles.stepIconContainer}>
-                <Ionicons name="person" size={24} color="#2563EB" />
-              </View>
-              <View>
-                <Text style={styles.stepTitle}>Choisir un professionnel</Text>
-                <Text style={styles.stepDescription}>Sélectionnez parmi nos professionnels</Text>
-              </View>
-            </View>
-
-            <Pressable onPress={() => setShowSearch(!showSearch)} style={styles.searchBar}>
-              <Ionicons name="search" size={20} color="#6B7280" />
-              <Text style={styles.searchPlaceholder}>Rechercher un médecin...</Text>
-            </Pressable>
-
-            {showSearch ? (
-              <View style={styles.searchSection}>
-                <TextInput
-                  value={searchQuery}
-                  onChangeText={(text) => {
-                    setSearchQuery(text);
-                    searchDoctors(text);
-                  }}
-                  placeholder="Nom, spécialité, ville..."
-                  placeholderTextColor="#9CA3AF"
-                  style={styles.searchInput}
-                  autoFocus
-                />
-                {searching && <ActivityIndicator style={{ marginTop: 16 }} color="#2563EB" />}
-                {searchResults.map((doctor) => (
-                  <Pressable key={doctor.id} onPress={() => selectDoctor(doctor)} style={styles.doctorCard}>
-                    <View style={styles.doctorAvatar}>
-                      <Ionicons name="person" size={24} color="#2563EB" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.doctorName}>{doctor.name}</Text>
-                      {doctor.specialty && <Text style={styles.doctorSpecialty}>{doctor.specialty}</Text>}
-                      {doctor.ville && <Text style={styles.doctorLocation}><Ionicons name="location" size={12} /> {doctor.ville}</Text>}
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
-                  </Pressable>
-                ))}
-              </View>
-            ) : (
-              <>
-                <Text style={styles.sectionLabel}>Professionnels populaires</Text>
-                {popularDoctors.map((doctor) => (
-                  <Pressable key={doctor.id} onPress={() => selectDoctor(doctor)} style={styles.doctorCard}>
-                    <View style={styles.doctorAvatar}>
-                      <Ionicons name="person" size={24} color="#2563EB" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.doctorName}>{doctor.name}</Text>
-                      {doctor.specialty && <Text style={styles.doctorSpecialty}>{doctor.specialty}</Text>}
-                      {doctor.ville && <Text style={styles.doctorLocation}><Ionicons name="location" size={12} /> {doctor.ville}</Text>}
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
-                  </Pressable>
-                ))}
-              </>
-            )}
-          </View>
-        )}
-
-        {currentStep === 2 && (
-          <View style={styles.stepContainer}>
-            <View style={styles.stepHeader}>
-              <View style={styles.stepIconContainer}>
-                <Ionicons name="calendar" size={24} color="#2563EB" />
-              </View>
-              <View>
-                <Text style={styles.stepTitle}>Choisir une date</Text>
-                <Text style={styles.stepDescription}>Rendez-vous avec {selectedDoctor?.name}</Text>
-              </View>
-            </View>
-
-            <View style={styles.dateGrid}>
-              {dates.map((d) => (
-                <Pressable key={d.date} onPress={() => setSelectedDate(d.date)} style={[styles.dateCard, selectedDate === d.date && styles.dateCardActive]}>
-                  <Text style={[styles.dateDay, selectedDate === d.date && styles.dateDayActive]}>{d.day}</Text>
-                  <Text style={[styles.dateDayNum, selectedDate === d.date && styles.dateDayNumActive]}>{d.dayNum}</Text>
-                  <Text style={[styles.dateMonth, selectedDate === d.date && styles.dateMonthActive]}>{d.month}</Text>
-                  {d.isToday && <View style={styles.todayDot} />}
-                </Pressable>
-              ))}
-            </View>
-
-            <Pressable onPress={handleNext} disabled={!selectedDate} style={[styles.nextButton, !selectedDate && styles.nextButtonDisabled]}>
-              <Text style={styles.nextButtonText}>Continuer</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-            </Pressable>
-          </View>
-        )}
-
-        {currentStep === 3 && (
-          <View style={styles.stepContainer}>
-            <View style={styles.stepHeader}>
-              <View style={styles.stepIconContainer}>
-                <Ionicons name="time" size={24} color="#2563EB" />
-              </View>
-              <View>
-                <Text style={styles.stepTitle}>Choisir l'heure</Text>
-                <Text style={styles.stepDescription}>{new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
-              </View>
-            </View>
-
-            {loadingSlots ? (
-              <View style={styles.center}>
-                <ActivityIndicator color="#2563EB" />
-                <Text style={styles.loadingText}>Chargement des créneaux...</Text>
-              </View>
-            ) : availableHours.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="time-outline" size={48} color="#D1D5DB" />
-                <Text style={styles.emptyStateText}>Aucun créneau disponible</Text>
-                <Pressable onPress={() => setCurrentStep(2)} style={styles.emptyStateButton}>
-                  <Text style={styles.emptyStateButtonText}>Choisir une autre date</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                <View style={styles.timeGrid}>
-                  {availableHours.map((slot, i) => {
-                    const time = typeof slot === 'string' ? slot : slot.time;
-                    const available = isSlotAvailable(slot);
-                    const selected = selectedTime === time;
-                    return (
-                      <Pressable
-                        key={`slot-${time}-${i}`}
-                        onPress={() => available && setSelectedTime(time)}
-                        disabled={!available}
-                        style={[styles.timeSlot, !available && styles.timeSlotBooked, selected && styles.timeSlotSelected]}
-                      >
-                        <Text style={[styles.timeSlotText, !available && styles.timeSlotTextBooked, selected && styles.timeSlotTextSelected]}>
-                          {time}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          {currentStep === 1 && (
+            <View style={styles.stepContainer}>
+              <View style={styles.stepHeader}>
+                <View style={styles.stepIconContainer}>
+                  <Ionicons name="person" size={24} color={Palette.primary} />
                 </View>
-                <Pressable onPress={handleNext} disabled={!selectedTime} style={[styles.nextButton, !selectedTime && styles.nextButtonDisabled]}>
-                  <Text style={styles.nextButtonText}>Continuer</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-                </Pressable>
-              </>
-            )}
-          </View>
-        )}
-
-        {currentStep === 4 && (
-          <View style={styles.stepContainer}>
-            <View style={styles.stepHeader}>
-              <View style={styles.stepIconContainer}>
-                <Ionicons name="checkmark-circle" size={24} color="#10B981" />
-              </View>
-              <View>
-                <Text style={styles.stepTitle}>Confirmation</Text>
-                <Text style={styles.stepDescription}>Vérifiez les détails de votre rendez-vous</Text>
-              </View>
-            </View>
-
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryRow}>
-                <Ionicons name="person" size={20} color="#6B7280" />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.summaryLabel}>Professionnel</Text>
-                  <Text style={styles.summaryValue}>{selectedDoctor?.name}</Text>
-                  {selectedDoctor?.specialty && <Text style={styles.summarySubValue}>{selectedDoctor.specialty}</Text>}
+                <View>
+                  <Text style={styles.stepTitle}>Choisir un professionnel</Text>
+                  <Text style={styles.stepDescription}>Sélectionnez parmi nos professionnels</Text>
                 </View>
               </View>
-              <View style={styles.summaryDivider} />
-              <View style={styles.summaryRow}>
-                <Ionicons name="calendar" size={20} color="#6B7280" />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.summaryLabel}>Date et heure</Text>
-                  <Text style={styles.summaryValue}>{new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</Text>
-                  <Text style={styles.summarySubValue}>à {selectedTime}</Text>
+
+              <Pressable onPress={() => setShowSearch(!showSearch)} style={styles.searchBar}>
+                <Ionicons name="search" size={20} color={Palette.textSecondary} />
+                <Text style={styles.searchPlaceholder}>Rechercher un médecin...</Text>
+              </Pressable>
+
+              {showSearch ? (
+                <View style={styles.searchSection}>
+                  <TextInput
+                    value={searchQuery}
+                    onChangeText={(text) => {
+                      setSearchQuery(text);
+                      searchDoctors(text);
+                    }}
+                    placeholder="Nom, spécialité, ville..."
+                    placeholderTextColor={Palette.textPlaceholder}
+                    style={styles.searchInput}
+                    autoFocus
+                  />
+                  {searching && <ActivityIndicator style={{ marginTop: 16 }} color={Palette.primary} />}
+                  {searchResults.map((doctor) => (
+                    <Pressable key={doctor.id} onPress={() => selectDoctor(doctor)} style={styles.doctorCard} accessibilityRole="button" accessibilityLabel={`Sélectionner Dr ${doctor.name}`}>
+                      <View style={styles.doctorAvatar}>
+                        <Ionicons name="person" size={24} color={Palette.primary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.doctorName}>{doctor.name}</Text>
+                        {doctor.specialty && <Text style={styles.doctorSpecialty}>{doctor.specialty}</Text>}
+                        {doctor.ville && <Text style={styles.doctorLocation}><Ionicons name="location" size={12} /> {doctor.ville}</Text>}
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+                    </Pressable>
+                  ))}
                 </View>
-              </View>
-            </View>
-
-            <Text style={styles.inputLabel}>Motif de consultation *</Text>
-            <TextInput value={reason} onChangeText={setReason} placeholder="Ex: Consultation générale, contrôle, suivi..." placeholderTextColor="#9CA3AF" style={styles.reasonInput} multiline numberOfLines={4} maxLength={500} />
-            <Text style={styles.charCount}>{reason.length}/500</Text>
-
-            <Pressable onPress={handleBookAppointment} disabled={booking || !reason.trim()} style={[styles.confirmButton, (booking || !reason.trim()) && styles.confirmButtonDisabled]}>
-              {booking ? <ActivityIndicator color="#FFFFFF" /> : (
+              ) : (
                 <>
-                  <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                  <Text style={styles.confirmButtonText}>Confirmer le rendez-vous</Text>
+                  <Text style={styles.sectionLabel}>Professionnels populaires</Text>
+                  {popularDoctors.map((doctor) => (
+                    <Pressable key={doctor.id} onPress={() => selectDoctor(doctor)} style={styles.doctorCard}>
+                      <View style={styles.doctorAvatar}>
+                        <Ionicons name="person" size={24} color="#2563EB" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.doctorName}>{doctor.name}</Text>
+                        {doctor.specialty && <Text style={styles.doctorSpecialty}>{doctor.specialty}</Text>}
+                        {doctor.ville && <Text style={styles.doctorLocation}><Ionicons name="location" size={12} /> {doctor.ville}</Text>}
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+                    </Pressable>
+                  ))}
                 </>
               )}
-            </Pressable>
-          </View>
-        )}
-      </ScrollView>
+            </View>
+          )}
+
+          {currentStep === 2 && (
+            <View style={styles.stepContainer}>
+              <View style={styles.stepHeader}>
+                <View style={styles.stepIconContainer}>
+                  <Ionicons name="calendar" size={24} color="#2563EB" />
+                </View>
+                <View>
+                  <Text style={styles.stepTitle}>Choisir une date</Text>
+                  <Text style={styles.stepDescription}>Rendez-vous avec {selectedDoctor?.name}</Text>
+                </View>
+              </View>
+
+              <View style={styles.dateGrid}>
+                {dates.map((d) => (
+                  <Pressable key={d.date} onPress={() => setSelectedDate(d.date)} style={[styles.dateCard, selectedDate === d.date && styles.dateCardActive]}>
+                    <Text style={[styles.dateDay, selectedDate === d.date && styles.dateDayActive]}>{d.day}</Text>
+                    <Text style={[styles.dateDayNum, selectedDate === d.date && styles.dateDayNumActive]}>{d.dayNum}</Text>
+                    <Text style={[styles.dateMonth, selectedDate === d.date && styles.dateMonthActive]}>{d.month}</Text>
+                    {d.isToday && <View style={styles.todayDot} />}
+                  </Pressable>
+                ))}
+              </View>
+
+              <Pressable onPress={handleNext} disabled={!selectedDate} style={[styles.nextButton, !selectedDate && styles.nextButtonDisabled]}>
+                <Text style={styles.nextButtonText}>Continuer</Text>
+                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          )}
+
+          {currentStep === 3 && (
+            <View style={styles.stepContainer}>
+              <View style={styles.stepHeader}>
+                <View style={styles.stepIconContainer}>
+                  <Ionicons name="time" size={24} color="#2563EB" />
+                </View>
+                <View>
+                  <Text style={styles.stepTitle}>Choisir l'heure</Text>
+                  <Text style={styles.stepDescription}>{new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+                </View>
+              </View>
+
+              {loadingSlots ? (
+                <View style={styles.center}>
+                  <ActivityIndicator color="#2563EB" />
+                  <Text style={styles.loadingText}>Chargement des créneaux...</Text>
+                </View>
+              ) : availableHours.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="time-outline" size={48} color="#D1D5DB" />
+                  <Text style={styles.emptyStateText}>Aucun créneau disponible</Text>
+                  <Pressable onPress={() => setCurrentStep(2)} style={styles.emptyStateButton}>
+                    <Text style={styles.emptyStateButtonText}>Choisir une autre date</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.timeGrid}>
+                    {availableHours.map((slot, i) => {
+                      const time = typeof slot === 'string' ? slot : slot.time;
+                      const available = isSlotAvailable(slot);
+                      const selected = selectedTime === time;
+                      return (
+                        <Pressable
+                          key={`slot-${time}-${i}`}
+                          onPress={() => available && setSelectedTime(time)}
+                          disabled={!available}
+                          style={[styles.timeSlot, !available && styles.timeSlotBooked, selected && styles.timeSlotSelected]}
+                        >
+                          <Text style={[styles.timeSlotText, !available && styles.timeSlotTextBooked, selected && styles.timeSlotTextSelected]}>
+                            {time}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Pressable onPress={handleNext} disabled={!selectedTime} style={[styles.nextButton, !selectedTime && styles.nextButtonDisabled]}>
+                    <Text style={styles.nextButtonText}>Continuer</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
+
+          {currentStep === 4 && (
+            <View style={styles.stepContainer}>
+              <View style={styles.stepHeader}>
+                <View style={styles.stepIconContainer}>
+                  <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                </View>
+                <View>
+                  <Text style={styles.stepTitle}>Confirmation</Text>
+                  <Text style={styles.stepDescription}>Vérifiez les détails de votre rendez-vous</Text>
+                </View>
+              </View>
+
+              <View style={styles.summaryCard}>
+                <View style={styles.summaryRow}>
+                  <Ionicons name="person" size={20} color="#6B7280" />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.summaryLabel}>Professionnel</Text>
+                    <Text style={styles.summaryValue}>{selectedDoctor?.name}</Text>
+                    {selectedDoctor?.specialty && <Text style={styles.summarySubValue}>{selectedDoctor.specialty}</Text>}
+                  </View>
+                </View>
+                <View style={styles.summaryDivider} />
+                <View style={styles.summaryRow}>
+                  <Ionicons name="calendar" size={20} color="#6B7280" />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.summaryLabel}>Date et heure</Text>
+                    <Text style={styles.summaryValue}>{new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                    <Text style={styles.summarySubValue}>à {selectedTime}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <Text style={styles.inputLabel}>Motif de consultation *</Text>
+              <TextInput value={reason} onChangeText={setReason} placeholder="Ex: Consultation générale, contrôle, suivi..." placeholderTextColor="#9CA3AF" style={styles.reasonInput} multiline numberOfLines={4} maxLength={500} />
+              <Text style={styles.charCount}>{reason.length}/500</Text>
+
+              <Pressable onPress={handleBookAppointment} disabled={booking || !reason.trim()} style={[styles.confirmButton, (booking || !reason.trim()) && styles.confirmButtonDisabled]}>
+                {booking ? <ActivityIndicator color="#FFFFFF" /> : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.confirmButtonText}>Confirmer le rendez-vous</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

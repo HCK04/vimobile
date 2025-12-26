@@ -52,7 +52,7 @@ export function useSearch() {
     try {
       // Build query parameters for /api/users endpoint
       const params: any = {};
-      
+
       if (filters.latitude && filters.longitude) {
         params.lat = filters.latitude;
         params.lng = filters.longitude;
@@ -61,12 +61,12 @@ export function useSearch() {
 
       // Fetch from /api/users (returns all healthcare professionals + organizations)
       const response = await apiClient.get<SearchResponse>('/users', { params });
-      
-      let items: SearchResult[] = Array.isArray(response.data?.data) 
-        ? response.data.data 
-        : Array.isArray(response.data) 
-        ? response.data 
-        : [];
+
+      let items: SearchResult[] = Array.isArray(response.data?.data)
+        ? response.data.data
+        : Array.isArray(response.data)
+          ? response.data
+          : [];
 
       // Client-side filtering for query, city, specialty, and type
       if (filters.query || filters.city || filters.specialty || filters.type) {
@@ -82,12 +82,12 @@ export function useSearch() {
             const firstName = (item.profile_data?.prenom || '').toLowerCase();
             const lastName = (item.profile_data?.nom || '').toLowerCase();
             const fullName = `${firstName} ${lastName}`.trim();
-            
-            const matchesName = name.includes(queryLower) || 
-                               firstName.includes(queryLower) || 
-                               lastName.includes(queryLower) || 
-                               fullName.includes(queryLower);
-            
+
+            const matchesName = name.includes(queryLower) ||
+              firstName.includes(queryLower) ||
+              lastName.includes(queryLower) ||
+              fullName.includes(queryLower);
+
             if (!matchesName) return false;
           }
 
@@ -99,7 +99,8 @@ export function useSearch() {
 
           // Filter by specialty
           if (specialtyLower) {
-            const specialty = (item.specialty || item.profile_data?.specialty || '').toLowerCase();
+            const specialtyRaw = item.specialty || item.profile_data?.specialty || '';
+            const specialty = (typeof specialtyRaw === 'string' ? specialtyRaw : String(specialtyRaw || '')).toLowerCase();
             if (!specialty.includes(specialtyLower)) return false;
           }
 
@@ -135,9 +136,9 @@ export function useSearch() {
     try {
       // Use /api/medecins endpoint for doctors only
       const response = await apiClient.get('/medecins');
-      
-      let items: SearchResult[] = Array.isArray(response.data) 
-        ? response.data 
+
+      let items: SearchResult[] = Array.isArray(response.data)
+        ? response.data
         : [];
 
       // Client-side filtering
@@ -187,7 +188,7 @@ export function useSearch() {
 
     try {
       const params: any = {};
-      
+
       if (filters.query) {
         params.q = filters.query;
       }
@@ -196,12 +197,12 @@ export function useSearch() {
       }
 
       const response = await apiClient.get('/organizations/search', { params });
-      
-      let items: SearchResult[] = Array.isArray(response.data?.data) 
-        ? response.data.data 
-        : Array.isArray(response.data) 
-        ? response.data 
-        : [];
+
+      let items: SearchResult[] = Array.isArray(response.data?.data)
+        ? response.data.data
+        : Array.isArray(response.data)
+          ? response.data
+          : [];
 
       // Mark as organizations
       items = items.map(item => ({ ...item, isOrganization: true }));
@@ -226,12 +227,12 @@ export function useSearch() {
 
     try {
       const response = await apiClient.get<SearchResponse>('/users');
-      
-      let items: SearchResult[] = Array.isArray(response.data?.data) 
-        ? response.data.data 
-        : Array.isArray(response.data) 
-        ? response.data 
-        : [];
+
+      let items: SearchResult[] = Array.isArray(response.data?.data)
+        ? response.data.data
+        : Array.isArray(response.data)
+          ? response.data
+          : [];
 
       const queryLower = query.trim().toLowerCase();
 
@@ -239,12 +240,14 @@ export function useSearch() {
       items = items
         .filter((item) => {
           const name = (item.name || '').toLowerCase();
-          const specialty = (item.specialty || item.profile_data?.specialty || '').toLowerCase();
-          const ville = (item.ville || item.profile_data?.ville || '').toLowerCase();
-          
-          return name.includes(queryLower) || 
-                 specialty.includes(queryLower) || 
-                 ville.includes(queryLower);
+          const specialtyRaw = item.specialty || item.profile_data?.specialty || '';
+          const specialty = (typeof specialtyRaw === 'string' ? specialtyRaw : String(specialtyRaw || '')).toLowerCase();
+          const villeRaw = item.ville || item.profile_data?.ville || '';
+          const ville = (typeof villeRaw === 'string' ? villeRaw : String(villeRaw || '')).toLowerCase();
+
+          return name.includes(queryLower) ||
+            specialty.includes(queryLower) ||
+            ville.includes(queryLower);
         })
         .slice(0, limit);
 

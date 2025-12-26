@@ -1,4 +1,4 @@
-import './reanimated-logger';
+import '../lib/reanimated-logger';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -8,6 +8,7 @@ import { useEffect, useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadAuthFromStorage } from '../lib/auth';
 import { addNotificationResponseListener, handleNotificationNavigation, setupPushNotifications } from '../lib/pushNotifications';
+import { requestTrackingPermission } from '../lib/analytics';
 import type * as Notifications from 'expo-notifications';
 
 // Load Reanimated only on native. On web, we use lightweight shims.
@@ -35,6 +36,13 @@ export default function RootLayout() {
   // Check onboarding status on mount
   useEffect(() => {
     checkOnboardingStatus();
+  }, []);
+
+  // Request tracking permission on iOS (required for App Store)
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      requestTrackingPermission();
+    }
   }, []);
 
   useEffect(() => {
@@ -114,11 +122,11 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/login" options={{ headerShown: false }} />
         <Stack.Screen name="auth/patient" options={{ headerShown: false }} />
         <Stack.Screen name="auth/professional" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="doctor/dashboard" options={{ headerShown: false }} />
-        <Stack.Screen name="doctor/services/index" options={{ headerShown: false }} />
         <Stack.Screen name="doctor/profile/absence" options={{ headerShown: false }} />
         <Stack.Screen name="+not-found" />
       </Stack>

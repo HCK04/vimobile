@@ -92,7 +92,7 @@ export const api = {
     setAuth(data.token, data.user);
     return data;
   },
-  
+
   registerProfessional: async (payload: {
     // common account
     name: string;
@@ -432,6 +432,15 @@ export const api = {
       method: 'PUT',
       body: { status },
     });
+  },
+
+  // QR Code scan verification
+  scanVerifyAppointment: async (id: string | number) => {
+    return request(`/doctor/appointments/${id}/scan-verify`, { method: 'POST' });
+  },
+
+  markAppointmentCheckIn: async (id: string | number) => {
+    return request(`/doctor/appointments/${id}/check-in`, { method: 'POST' });
   },
 
   // Notifications

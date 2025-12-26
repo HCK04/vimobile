@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, FlatList, Pressable, StyleSheet, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../../lib/apiClient';
 import { getAuth } from '../../lib/api';
 import { EmptyState } from '@/components/EmptyState';
+import { Palette } from '../../constants/Colors';
 
 export default function DoctorNotificationsScreen() {
   const router = useRouter();
@@ -42,34 +44,34 @@ export default function DoctorNotificationsScreen() {
     try {
       await apiClient.put('/notifications/read-all');
       onRefresh();
-    } catch (_) {}
+    } catch (_) { }
   };
 
   const markRead = async (id: string) => {
     try {
       await apiClient.put(`/notifications/${encodeURIComponent(id)}/read`);
       setItems((prev) => prev.map((n) => n.id === id ? { ...n, read_at: new Date().toISOString() } : n));
-    } catch (_) {}
+    } catch (_) { }
   };
 
   if (!user) {
     return (
-      <View style={styles.center}>
+      <SafeAreaView style={[styles.center, { backgroundColor: Palette.background }]}>
         <Text style={styles.text}>Espace professionnel sécurisé</Text>
         <Pressable onPress={() => router.push('/auth/professional' as any)} style={styles.cta}><Text style={styles.ctaText}>Se connecter</Text></Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
-  if (loading && !refreshing) return <View style={styles.center}><ActivityIndicator /></View>;
+  if (loading && !refreshing) return <SafeAreaView style={[styles.center, { backgroundColor: Palette.background }]}><ActivityIndicator color={Palette.primary} /></SafeAreaView>;
 
   return (
-    <View style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: Palette.background }} edges={['top']}>
       {/* Header */}
       <View style={styles.headerBar}>
         <Text style={styles.headerTitle}>Notifications</Text>
         <Pressable onPress={markAllRead} style={styles.iconBtn}>
-          <Ionicons name="checkmark-done" size={18} color="#2563EB" />
+          <Ionicons name="checkmark-done" size={18} color={Palette.primary} />
         </Pressable>
       </View>
 
@@ -95,12 +97,12 @@ export default function DoctorNotificationsScreen() {
         <FlatList
           data={items}
           keyExtractor={(it) => String(it.id)}
-          contentContainerStyle={{ padding: 16, gap: 10 }}
+          contentContainerStyle={{ padding: 16 }}
           renderItem={({ item }) => {
             const isUnread = !item.read_at;
             return (
               <Pressable onPress={() => markRead(String(item.id))} style={[styles.card, isUnread && styles.cardUnread]}>
-                <View style={styles.cardIcon}><Ionicons name={isUnread ? 'notifications' : 'notifications-outline'} size={18} color={isUnread ? '#2563EB' : '#6B7280'} /></View>
+                <View style={styles.cardIcon}><Ionicons name={isUnread ? 'notifications' : 'notifications-outline'} size={18} color={isUnread ? Palette.primary : Palette.textPlaceholder} /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.title}>{item?.data?.title || 'Notification'}</Text>
                   {!!item?.data?.message && <Text style={styles.sub} numberOfLines={2}>{item.data.message}</Text>}
@@ -109,25 +111,25 @@ export default function DoctorNotificationsScreen() {
               </Pressable>
             );
           }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Palette.primary]} tintColor={Palette.primary} />}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
-  text: { color: '#374151', marginBottom: 10 },
-  cta: { backgroundColor: '#2563EB', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10 },
-  ctaText: { color: '#fff', fontWeight: '700' },
-  headerBar: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
-  iconBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE', padding: 8, borderRadius: 10 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E7EB', flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cardUnread: { borderColor: '#93C5FD', backgroundColor: '#F8FAFF' },
-  cardIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
-  title: { fontWeight: '700', color: '#111827' },
-  sub: { color: '#6B7280', marginTop: 2 },
-  badge: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2563EB' },
+  text: { color: Palette.textSecondary, marginBottom: 10 },
+  cta: { backgroundColor: Palette.primary, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10 },
+  ctaText: { color: Palette.surface, fontWeight: '700' },
+  headerBar: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Palette.surface, borderBottomWidth: 1, borderBottomColor: Palette.border },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: Palette.text },
+  iconBtn: { backgroundColor: Palette.background, borderWidth: 1, borderColor: Palette.border, padding: 8, borderRadius: 10 },
+  card: { backgroundColor: Palette.surface, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: Palette.border, flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  cardUnread: { borderColor: Palette.primary, backgroundColor: Palette.primaryLight },
+  cardIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: Palette.background, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  title: { fontWeight: '700', color: Palette.text },
+  sub: { color: Palette.textSecondary, marginTop: 2 },
+  badge: { width: 10, height: 10, borderRadius: 5, backgroundColor: Palette.primary },
 });

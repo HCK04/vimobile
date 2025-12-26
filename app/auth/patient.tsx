@@ -1,465 +1,508 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+/**
+ * Patient Registration - Multi-Step Wizard
+ * 3 Steps: Identity → Contact → Security
+ */
+
+import React, { useState, useRef } from 'react';
 import {
-  Alert,
-  Animated,
+  View,
+  Text,
+  ScrollView,
+  Pressable,
+  StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  Image,
-  View,
+  Alert,
+  Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import {
+  AuthInput,
+  AuthButton,
+  StepIndicator,
+  PasswordStrengthMeter,
+  SocialLoginButtons,
+  Divider,
+  AUTH_COLORS,
+  AUTH_SPACING,
+} from '../../lib/auth-components';
+import { validation, errorMessages } from '../../lib/validation';
 import { api } from '../../lib/api';
 import { getPostAuthRoute } from '../../lib/authHelpers';
 
 const ONBOARDING_KEY = '@vi-sante:onboarding_completed';
+const TOTAL_STEPS = 3;
 
-export default function PatientAuthScreen() {
+interface FormData {
+  // Step 1: Identity
+  firstName: string;
+  lastName: string;
+  dateOfBirth: Date | null;
+
+  // Step 2: Contact
+  email: string;
+  phone: string;
+
+  // Step 3: Security
+  password: string;
+  passwordConfirm: string;
+  acceptTerms: boolean;
+}
+
+interface FormErrors {
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  passwordConfirm?: string;
+  acceptTerms?: string;
+}
+
+interface TouchedFields {
+  [key: string]: boolean;
+}
+
+export default function PatientRegistrationScreen() {
   const router = useRouter();
-  const { sinscrire, next } = useLocalSearchParams<{ sinscrire?: string; next?: string }>();
-  const [tab, setTab] = useState<'login' | 'register'>('login');
-  const [registerStep, setRegisterStep] = useState<1 | 2 | 3>(1);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Step management
+  const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (tab === 'register') setRegisterStep(1);
-  }, [tab]);
+  // Form state
+  const [formData, setFormData] = useState<FormData>({
+    firstName: '',
+    lastName: '',
+    dateOfBirth: null,
+    email: '',
+    phone: '',
+    password: '',
+    passwordConfirm: '',
+    acceptTerms: false,
+  });
 
-  useEffect(() => {
-    if (sinscrire) setTab('register');
-  }, [sinscrire]);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [touched, setTouched] = useState<TouchedFields>({});
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
+  // Date picker state
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Form field update handler
+  const updateField = (field: keyof FormData, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    setTouched(prev => ({ ...prev, [field]: true }));
+
+    // Clear error when user starts typing
+    if (errors[field as keyof FormErrors]) {
+      setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  // Validate current step
+  const validateStep = (step: number): boolean => {
+    const newErrors: FormErrors = {};
+
+    switch (step) {
+      case 1:
+        if (!validation.name(formData.firstName)) {
+          newErrors.firstName = errorMessages.name;
+        }
+        if (!validation.name(formData.lastName)) {
+          newErrors.lastName = errorMessages.name;
+        }
+        if (!validation.dateOfBirth(formData.dateOfBirth)) {
+          newErrors.dateOfBirth = errorMessages.dateOfBirth;
+        }
+        break;
+
+      case 2:
+        if (!validation.email(formData.email)) {
+          newErrors.email = errorMessages.email;
+        }
+        if (!validation.phone(formData.phone)) {
+          newErrors.phone = errorMessages.phone;
+        }
+        break;
+
+      case 3:
+        if (!validation.password.isValid(formData.password)) {
+          newErrors.password = 'Le mot de passe ne respecte pas les critères';
+        }
+        if (formData.password !== formData.passwordConfirm) {
+          newErrors.passwordConfirm = errorMessages.password.mismatch;
+        }
+        if (!formData.acceptTerms) {
+          newErrors.acceptTerms = 'Vous devez accepter les conditions';
+        }
+        break;
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Navigate between steps with animation
+  const animateTransition = (callback: () => void) => {
+    Animated.sequence([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
     ]).start();
-  }, [registerStep, fadeAnim, slideAnim]);
 
-  // Login form
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+    setTimeout(callback, 150);
+  };
 
-  // Register form (patient)
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [password2, setPassword2] = useState('');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [age, setAge] = useState('');
-  const [gender, setGender] = useState<'homme' | 'femme' | 'autre' | ''>('');
-  const [blood, setBlood] = useState('');
-
-  const allergyOptions = useMemo(() => [
-    'Aucune', 'Pollens', 'Acariens', 'Moisissures', 'Animaux', 'Aliments', 'Autres'
-  ], []);
-  const chronicOptions = useMemo(() => [
-    'Aucune', 'Diabète', 'Hypertension', 'Asthme', 'Maladie cardiaque', 'Cancer', 'Thyroïde', 'Autres'
-  ], []);
-
-  const [allergies, setAllergies] = useState<string[]>([]);
-  const [chronics, setChronics] = useState<string[]>([]);
-
-  const toggleMulti = (arr: string[], setArr: (s: string[]) => void, val: string) => {
-    if (val === 'Aucune') {
-      // Selecting "Aucune" clears others; selecting again clears it
-      if (arr.length === 1 && arr[0] === 'Aucune') {
-        setArr([]);
+  const goToNextStep = () => {
+    if (validateStep(currentStep)) {
+      if (currentStep < TOTAL_STEPS) {
+        animateTransition(() => {
+          setCurrentStep(prev => prev + 1);
+          scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+        });
       } else {
-        setArr(['Aucune']);
+        handleSubmit();
       }
-      return;
-    }
-    const next = arr.filter((x) => x !== 'Aucune');
-    const has = next.includes(val);
-    setArr(has ? next.filter((x) => x !== val) : [...next, val]);
-  };
-
-  const onSubmitLogin = async () => {
-    if (!loginEmail || !loginPassword) {
-      Alert.alert('Connexion', 'Veuillez saisir votre email et mot de passe.');
-      return;
-    }
-    try {
-      setLoading(true);
-      const res = await api.login({ email: loginEmail, password: loginPassword });
-      // Mark onboarding as completed
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-      const route = getPostAuthRoute(res?.user || {});
-      // For patients, respect the 'next' parameter if provided
-      const safeNext = typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : null;
-      const finalRoute = (route === '/(tabs)/profil' && safeNext) ? safeNext : route;
-      router.replace(finalRoute as any);
-    } catch (e: any) {
-      const data = e?.response?.data;
-      const errs = data?.errors;
-      let msg = (data && (data.message || data.error)) || e?.message || 'Une erreur est survenue';
-      if (errs && typeof errs === 'object') {
-        const values = Object.values(errs);
-        const first = Array.isArray(values[0]) ? values[0][0] : values[0];
-        if (first) msg = String(first);
-      }
-      Alert.alert('Connexion', msg);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const onSubmitRegister = async () => {
-    // Interface-only validation subset
-    if (!email || !password || !password2) {
-      Alert.alert('Inscription', 'Veuillez compléter votre compte (email et mot de passe).');
-      setRegisterStep(1);
-      return;
+  const goToPrevStep = () => {
+    if (currentStep > 1) {
+      animateTransition(() => {
+        setCurrentStep(prev => prev - 1);
+        scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+      });
+    } else {
+      router.back();
     }
-    if (password.length < 8) {
-      Alert.alert('Inscription', 'Le mot de passe doit contenir au moins 8 caractères.');
-      setRegisterStep(1);
-      return;
-    }
-    if (password !== password2) {
-      Alert.alert('Inscription', 'Les mots de passe ne correspondent pas.');
-      setRegisterStep(1);
-      return;
-    }
-    if (!name || !phone || !age || !gender) {
-      Alert.alert('Inscription', 'Veuillez compléter vos informations personnelles.');
-      setRegisterStep(2);
-      return;
-    }
+  };
+
+  // Handle final submission
+  const handleSubmit = async () => {
+    if (!validateStep(3)) return;
+
     try {
       setLoading(true);
+
+      // Calculate age in years from date of birth
+      let age: number | undefined;
+      if (formData.dateOfBirth) {
+        const today = new Date();
+        const birthDate = formData.dateOfBirth;
+        age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+      }
+
+      // Combine firstName and lastName into name field
+      const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+
       const res = await api.registerPatient({
-        name,
-        email,
-        password,
-        password_confirmation: password2,
-        phone,
-        age,
-        gender,
-        blood_type: blood,
-        allergies,
-        chronic_diseases: chronics,
-        role_id: 1,
+        name: fullName,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
+        password_confirmation: formData.passwordConfirm,
+        age: age, // Backend expects age as integer (years)
       });
-      // Mark onboarding as completed
+
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+
+      // Auto-login: API already set the token via setAuth in registerPatient
+      // Navigate to the correct route based on role
       const route = getPostAuthRoute(res?.user || {});
-      // For patients, respect the 'next' parameter if provided
-      const safeNext = typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : null;
-      const finalRoute = (route === '/(tabs)/profil' && safeNext) ? safeNext : route;
-      router.replace(finalRoute as any);
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const data = e?.response?.data;
-      const url = e?.response?.config?.url || e?.config?.url;
-      // eslint-disable-next-line no-console
-      console.error('[RegisterPatient] Error', { message: e?.message, status, data, url });
-      const errs = data?.errors;
-      let errMsg = (data && (data.message || data.error)) || e?.message || 'Une erreur est survenue';
-      if (errs && typeof errs === 'object') {
-        const values = Object.values(errs);
-        const first = Array.isArray(values[0]) ? values[0][0] : values[0];
-        if (first) errMsg = String(first);
-      }
-      Alert.alert('Inscription', errMsg);
+
+      Alert.alert(
+        'Bienvenue !',
+        'Votre compte a été créé avec succès.',
+        [{ text: 'Continuer', onPress: () => router.replace(route as any) }]
+      );
+    } catch (error: any) {
+      const message = error?.response?.data?.message || 'Une erreur est survenue';
+      Alert.alert('Erreur', message);
     } finally {
       setLoading(false);
     }
   };
 
-  const validateStep1 = () => {
-    if (!email) { Alert.alert('Étape 1', 'Email requis.'); return false; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { Alert.alert('Étape 1', 'Email invalide.'); return false; }
-    if (!phone) { Alert.alert('Étape 1', 'Téléphone requis.'); return false; }
-    if (!password || !password2) { Alert.alert('Étape 1', 'Mot de passe et confirmation requis.'); return false; }
-    if (password.length < 8) { Alert.alert('Étape 1', 'Le mot de passe doit contenir au moins 8 caractères.'); return false; }
-    if (!/[a-z]/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir une lettre minuscule.'); return false; }
-    if (!/[A-Z]/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir une lettre majuscule.'); return false; }
-    if (!/\d/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir un chiffre.'); return false; }
-    if (!/[@$!%*?&]/.test(password)) { Alert.alert('Étape 1', 'Le mot de passe doit contenir un caractère spécial (@$!%*?&).'); return false; }
-    if (password !== password2) { Alert.alert('Étape 1', 'Les mots de passe ne correspondent pas.'); return false; }
-    return true;
-  };
-
-  const validateStep2 = () => {
-    if (!name) { Alert.alert('Étape 2', 'Nom complet requis.'); return false; }
-    if (!phone) { Alert.alert('Étape 2', 'Téléphone requis.'); return false; }
-    if (!age) { Alert.alert('Étape 2', 'Âge requis.'); return false; }
-    if (!gender) { Alert.alert('Étape 2', 'Genre requis.'); return false; }
-    return true;
-  };
-
-  const goNext = async () => {
-    if (registerStep === 1) {
-      if (!validateStep1()) return;
-      try {
-        setLoading(true);
-        await api.checkAvailability({ email, phone });
-      } catch (e: any) {
-        const msg = e?.response?.data?.message || e?.message || 'Erreur de vérification';
-        Alert.alert('Disponibilité', msg);
-        setLoading(false);
-        return;
-      }
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 8, duration: 150, useNativeDriver: true }),
-      ]).start(() => {
-        setRegisterStep(2);
-        setLoading(false);
-      });
-      return;
-    }
-    if (registerStep === 2) {
-      if (!validateStep2()) return;
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 8, duration: 150, useNativeDriver: true }),
-      ]).start(() => setRegisterStep(3));
+  // Handle date selection
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      updateField('dateOfBirth', selectedDate);
     }
   };
 
-  const goBack = () => {
-    if (registerStep > 1) {
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 8, duration: 150, useNativeDriver: true }),
-      ]).start(() => setRegisterStep((s) => (s - 1) as 1 | 2 | 3));
+  // Format date for display
+  const formatDate = (date: Date | null): string => {
+    if (!date) return '';
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  // Render step content
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <>
+            <Text style={styles.stepTitle}>Vos informations</Text>
+            <Text style={styles.stepDescription}>
+              Nous avons besoin de quelques informations pour créer votre compte patient.
+            </Text>
+
+            <AuthInput
+              label="Prénom *"
+              value={formData.firstName}
+              onChangeText={(v) => updateField('firstName', v)}
+              error={errors.firstName}
+              touched={touched.firstName}
+              leftIcon="person-outline"
+              placeholder="Jean"
+              autoCapitalize="words"
+              autoComplete="given-name"
+              textContentType="givenName"
+            />
+
+            <AuthInput
+              label="Nom *"
+              value={formData.lastName}
+              onChangeText={(v) => updateField('lastName', v)}
+              error={errors.lastName}
+              touched={touched.lastName}
+              leftIcon="person-outline"
+              placeholder="Dupont"
+              autoCapitalize="words"
+              autoComplete="family-name"
+              textContentType="familyName"
+            />
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Date de naissance *</Text>
+              <Pressable
+                style={[
+                  styles.datePickerButton,
+                  errors.dateOfBirth && touched.dateOfBirth && styles.datePickerError,
+                ]}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={20}
+                  color={AUTH_COLORS.text.tertiary}
+                />
+                <Text
+                  style={[
+                    styles.datePickerText,
+                    !formData.dateOfBirth && styles.datePickerPlaceholder,
+                  ]}
+                >
+                  {formData.dateOfBirth ? formatDate(formData.dateOfBirth) : 'JJ/MM/AAAA'}
+                </Text>
+              </Pressable>
+              {errors.dateOfBirth && touched.dateOfBirth && (
+                <Text style={styles.errorText}>{errors.dateOfBirth}</Text>
+              )}
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={formData.dateOfBirth || new Date(2000, 0, 1)}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleDateChange}
+                maximumDate={new Date()}
+                minimumDate={new Date(1900, 0, 1)}
+              />
+            )}
+          </>
+        );
+
+      case 2:
+        return (
+          <>
+            <Text style={styles.stepTitle}>Vos coordonnées</Text>
+            <Text style={styles.stepDescription}>
+              Ces informations nous permettront de vous contacter et de sécuriser votre compte.
+            </Text>
+
+            <AuthInput
+              label="Email *"
+              value={formData.email}
+              onChangeText={(v) => updateField('email', v)}
+              error={errors.email}
+              touched={touched.email}
+              leftIcon="mail-outline"
+              placeholder="vous@exemple.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+              textContentType="emailAddress"
+            />
+
+            <AuthInput
+              label="Téléphone *"
+              value={formData.phone}
+              onChangeText={(v) => updateField('phone', v)}
+              error={errors.phone}
+              touched={touched.phone}
+              leftIcon="call-outline"
+              placeholder="0612345678"
+              keyboardType="phone-pad"
+              autoComplete="tel"
+              textContentType="telephoneNumber"
+            />
+          </>
+        );
+
+      case 3:
+        return (
+          <>
+            <Text style={styles.stepTitle}>Sécurisez votre compte</Text>
+            <Text style={styles.stepDescription}>
+              Choisissez un mot de passe fort pour protéger votre compte.
+            </Text>
+
+            <AuthInput
+              label="Mot de passe *"
+              value={formData.password}
+              onChangeText={(v) => updateField('password', v)}
+              error={errors.password}
+              touched={touched.password}
+              leftIcon="lock-closed-outline"
+              placeholder="••••••••"
+              isPassword
+              autoComplete="password-new"
+              textContentType="newPassword"
+            />
+
+            <PasswordStrengthMeter password={formData.password} />
+
+            <AuthInput
+              label="Confirmer le mot de passe *"
+              value={formData.passwordConfirm}
+              onChangeText={(v) => updateField('passwordConfirm', v)}
+              error={errors.passwordConfirm}
+              touched={touched.passwordConfirm}
+              leftIcon="lock-closed-outline"
+              placeholder="••••••••"
+              isPassword
+              autoComplete="password-new"
+              textContentType="newPassword"
+              containerStyle={{ marginTop: AUTH_SPACING.lg }}
+            />
+
+            {/* Terms Checkbox */}
+            <Pressable
+              style={styles.termsContainer}
+              onPress={() => updateField('acceptTerms', !formData.acceptTerms)}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  formData.acceptTerms && styles.checkboxChecked,
+                ]}
+              >
+                {formData.acceptTerms && (
+                  <Ionicons name="checkmark" size={14} color="#FFF" />
+                )}
+              </View>
+              <Text style={styles.termsText}>
+                J'accepte les{' '}
+                <Text style={styles.termsLink}>conditions d'utilisation</Text>
+                {' '}et la{' '}
+                <Text style={styles.termsLink}>politique de confidentialité</Text>
+              </Text>
+            </Pressable>
+            {errors.acceptTerms && (
+              <Text style={styles.errorText}>{errors.acceptTerms}</Text>
+            )}
+          </>
+        );
+
+      default:
+        return null;
     }
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.brandLeft}>
-              <Ionicons name="medkit" size={24} color="#2563EB" />
-              <Text style={styles.brandText}>Vi-santé</Text>
-            </View>
-          </View>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        style={{ flex: 1 }}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Pressable onPress={goToPrevStep} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={24} color={AUTH_COLORS.text.primary} />
+          </Pressable>
+          <StepIndicator currentStep={currentStep} totalSteps={TOTAL_STEPS} />
+          <View style={{ width: 40 }} />
+        </View>
 
-          {/* Title */}
-          <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}>
-            <Text style={styles.screenTitle}>Portail Patient</Text>
-            <Text style={styles.screenSubtitle}>Connectez-vous ou créez un compte</Text>
-          </View>
-
-          {/* Tabs */}
-          <View style={styles.tabs}>
-            <Pressable
-              onPress={() => setTab('login')}
-              style={[styles.tabBtn, tab === 'login' && styles.tabBtnActive]}
-            >
-              <Text style={[styles.tabText, tab === 'login' && styles.tabTextActive]}>Se connecter</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setTab('register')}
-              style={[styles.tabBtn, tab === 'register' && styles.tabBtnActive]}
-            >
-              <Text style={[styles.tabText, tab === 'register' && styles.tabTextActive]}>S'inscrire</Text>
-            </Pressable>
-          </View>
-
-          {tab === 'login' ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Connexion</Text>
-              <View style={styles.formRow}>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  value={loginEmail}
-                  onChangeText={setLoginEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  placeholder="vous@exemple.com"
-                  placeholderTextColor="#9CA3AF"
-                  style={styles.input}
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View style={{ opacity: fadeAnim }}>
+            {/* Social Login on first step */}
+            {currentStep === 1 && (
+              <>
+                <SocialLoginButtons
+                  onApplePress={() => Alert.alert('Apple Sign In', 'Coming soon')}
+                  onGooglePress={() => Alert.alert('Google Sign In', 'Coming soon')}
                 />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.label}>Mot de passe</Text>
-                <TextInput
-                  value={loginPassword}
-                  onChangeText={setLoginPassword}
-                  secureTextEntry
-                  placeholder="••••••••"
-                  placeholderTextColor="#9CA3AF"
-                  style={styles.input}
-                />
-              </View>
-              <Pressable onPress={onSubmitLogin} style={styles.primaryBtn}>
-                <Text style={styles.primaryBtnText}>Se connecter</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Créer un compte</Text>
+                <Divider text="ou inscrivez-vous avec" />
+              </>
+            )}
 
-              {/* Stepper */}
-              <View style={styles.stepperWrap}>
-                <View style={styles.stepperRow}>
-                  <View style={styles.stepperItem}>
-                    <View style={[styles.stepperCircle, registerStep >= 1 && styles.stepperCircleActive]}>
-                      <Text style={[styles.stepperNum, registerStep >= 1 && styles.stepperNumActive]}>1</Text>
-                    </View>
-                    <Text style={[styles.stepperLabel, registerStep >= 1 && styles.stepperLabelActive]}>Compte</Text>
-                  </View>
-                  <View style={[styles.stepperConnector, registerStep >= 2 && styles.stepperConnectorActive]} />
-                  <View style={styles.stepperItem}>
-                    <View style={[styles.stepperCircle, registerStep >= 2 && styles.stepperCircleActive]}>
-                      <Text style={[styles.stepperNum, registerStep >= 2 && styles.stepperNumActive]}>2</Text>
-                    </View>
-                    <Text style={[styles.stepperLabel, registerStep >= 2 && styles.stepperLabelActive]}>Identité</Text>
-                  </View>
-                  <View style={[styles.stepperConnector, registerStep >= 3 && styles.stepperConnectorActive]} />
-                  <View style={styles.stepperItem}>
-                    <View style={[styles.stepperCircle, registerStep >= 3 && styles.stepperCircleActive]}>
-                      <Text style={[styles.stepperNum, registerStep >= 3 && styles.stepperNumActive]}>3</Text>
-                    </View>
-                    <Text style={[styles.stepperLabel, registerStep >= 3 && styles.stepperLabelActive]}>Médical</Text>
-                  </View>
-                </View>
-                <View style={styles.progressOuter}>
-                  <View style={[styles.progressInner, { width: `${(registerStep / 3) * 100}%` }]} />
-                </View>
-              </View>
+            {renderStepContent()}
 
-              {/* Step content */}
-              <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-              {registerStep === 1 && (
-                <View>
-                  <View style={styles.formRow}>
-                    <Text style={styles.label}>Email</Text>
-                    <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="vous@exemple.com" placeholderTextColor="#9CA3AF" style={styles.input} />
-                  </View>
-                  <View style={styles.formRow}>
-                    <Text style={styles.label}>Téléphone</Text>
-                    <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="06XXXXXXXX" placeholderTextColor="#9CA3AF" style={styles.input} />
-                  </View>
-                  <View style={styles.twoCols}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Mot de passe</Text>
-                      <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor="#9CA3AF" style={styles.input} />
-                    </View>
-                    <View style={{ width: 12 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Confirmation</Text>
-                      <TextInput value={password2} onChangeText={setPassword2} secureTextEntry placeholder="••••••••" placeholderTextColor="#9CA3AF" style={styles.input} />
-                    </View>
-                  </View>
-                </View>
+            {/* Bottom Actions - Inside ScrollView */}
+            <View style={styles.bottomActionsInner}>
+              <AuthButton
+                title={currentStep === TOTAL_STEPS ? 'Créer mon compte' : 'Continuer'}
+                onPress={goToNextStep}
+                loading={loading}
+              />
+
+              {currentStep === 1 && (
+                <Pressable
+                  style={styles.loginLink}
+                  onPress={() => router.replace('/auth/login')}
+                >
+                  <Text style={styles.loginLinkText}>
+                    Déjà un compte ? <Text style={styles.loginLinkBold}>Se connecter</Text>
+                  </Text>
+                </Pressable>
               )}
-
-              {registerStep === 2 && (
-                <View>
-                  <View style={styles.formRow}>
-                    <Text style={styles.label}>Nom complet</Text>
-                    <TextInput value={name} onChangeText={setName} placeholder="Votre nom" placeholderTextColor="#9CA3AF" style={styles.input} />
-                  </View>
-                  <View style={styles.twoCols}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Âge</Text>
-                      <TextInput value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Ex. 30" placeholderTextColor="#9CA3AF" style={styles.input} />
-                    </View>
-                    <View style={{ width: 12 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Téléphone</Text>
-                      <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="06XXXXXXXX" placeholderTextColor="#9CA3AF" style={styles.input} />
-                    </View>
-                  </View>
-                  <Text style={styles.label}>Genre</Text>
-                  <View style={styles.chipsRow}>
-                    {[
-                      { key: 'homme', label: 'Homme' },
-                      { key: 'femme', label: 'Femme' },
-                      { key: 'autre', label: 'Autre' },
-                    ].map((g) => (
-                      <Pressable
-                        key={g.key}
-                        onPress={() => setGender(g.key as any)}
-                        style={[styles.chip, gender === g.key && styles.chipActive]}
-                      >
-                        <Text style={[styles.chipText, gender === g.key && styles.chipTextActive]}>{g.label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {registerStep === 3 && (
-                <View>
-                  <Text style={styles.label}>Groupe sanguin</Text>
-                  <View style={styles.chipsRow}>
-                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((b) => (
-                      <Pressable key={b} onPress={() => setBlood(b)} style={[styles.chip, blood === b && styles.chipActive]}>
-                        <Text style={[styles.chipText, blood === b && styles.chipTextActive]}>{b}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.label}>Allergies</Text>
-                  <View style={styles.chipsRow}>
-                    {allergyOptions.map((opt) => (
-                      <Pressable key={opt} onPress={() => toggleMulti(allergies, setAllergies, opt)} style={[styles.chip, (allergies.includes(opt)) && styles.chipActive]}>
-                        <Text style={[styles.chipText, (allergies.includes(opt)) && styles.chipTextActive]}>{opt}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.label}>Maladies chroniques</Text>
-                  <View style={styles.chipsRow}>
-                    {chronicOptions.map((opt) => (
-                      <Pressable key={opt} onPress={() => toggleMulti(chronics, setChronics, opt)} style={[styles.chip, (chronics.includes(opt)) && styles.chipActive]}>
-                        <Text style={[styles.chipText, (chronics.includes(opt)) && styles.chipTextActive]}>{opt}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-              </Animated.View>
-
-              {/* Controls */}
-              <View style={styles.controlsRow}>
-                {registerStep > 1 ? (
-                  <Pressable disabled={loading} onPress={goBack} style={[styles.secondaryBtn, loading && { opacity: 0.6 }]}>
-                    <Text style={styles.secondaryBtnText}>Retour</Text>
-                  </Pressable>
-                ) : <View style={{ flex: 1 }} />}
-
-                {registerStep < 3 ? (
-                  <Pressable disabled={loading} onPress={goNext} style={[styles.primaryBtn, { flex: 1 }, loading && { opacity: 0.7 }]}>
-                    <Text style={styles.primaryBtnText}>{loading ? 'Veuillez patienter...' : 'Suivant'}</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable disabled={loading} onPress={onSubmitRegister} style={[styles.primaryBtn, { flex: 1 }, loading && { opacity: 0.7 }]}>
-                    <Text style={styles.primaryBtnText}>{loading ? 'Création...' : 'Créer mon compte'}</Text>
-                  </Pressable>
-                )}
-              </View>
-
-              <Text style={styles.disclaimer}>
-                En continuant, vous acceptez notre engagement de confidentialité (CNDP - Loi 09-08).
-              </Text>
             </View>
-          )}
-
-          {/* Footer */}
-          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <Ionicons name="heart" size={18} color="#2563EB" />
-              <Text style={{ color: '#2563EB', fontWeight: '700', fontSize: 16 }}>Vi-Santé</Text>
-            </View>
-            <Text style={{ color: '#6B7280', fontSize: 12 }}>&copy; 2025 Vi-Santé. Tous droits réservés.</Text>
-          </View>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -468,235 +511,123 @@ export default function PatientAuthScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingBottom: 24,
+    flex: 1,
+    backgroundColor: AUTH_COLORS.background,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
+    paddingHorizontal: AUTH_SPACING.md,
+    paddingVertical: AUTH_SPACING.sm,
   },
-  brandLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  brandText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#2563EB',
-  },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  screenSubtitle: {
-    marginTop: 2,
-    color: '#6B7280',
-  },
-  tabs: {
-    marginTop: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    backgroundColor: '#EEF2FF',
-    marginHorizontal: 16,
+  backButton: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    padding: 4,
-    alignSelf: 'stretch',
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  tabBtnActive: {
-    backgroundColor: '#fff',
-  },
-  tabText: {
-    color: '#1F2937',
-    fontWeight: '700',
-  },
-  tabTextActive: {
-    color: '#2563EB',
-  },
-  card: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 20,
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 10,
-  },
-  formRow: {
-    marginBottom: 10,
-  },
-  label: {
-    marginBottom: 6,
-    color: '#374151',
-    fontWeight: '700',
-  },
-  input: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    color: '#111827',
-    backgroundColor: 'transparent',
-  },
-  twoCols: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 10,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  chipActive: {
-    backgroundColor: '#DBEAFE',
-    borderColor: '#93C5FD',
-  },
-  chipText: {
-    color: '#374151',
-    fontWeight: '700',
-  },
-  chipTextActive: {
-    color: '#2563EB',
-  },
-  primaryBtn: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-    shadowColor: '#1D4ED8',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  primaryBtnText: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-  disclaimer: {
-    marginTop: 8,
-    color: '#6B7280',
-    fontSize: 12,
-  },
-  stepperWrap: {
-    marginBottom: 12,
-  },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  stepperItem: {
-    alignItems: 'center',
-    width: '28%',
-  },
-  stepperCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    backgroundColor: AUTH_COLORS.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
   },
-  stepperCircleActive: {
-    borderColor: '#2563EB',
-    backgroundColor: '#DBEAFE',
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: AUTH_SPACING.lg,
+    paddingTop: AUTH_SPACING.md,
   },
-  stepperNum: {
-    color: '#6B7280',
+  stepTitle: {
+    fontSize: 24,
     fontWeight: '800',
+    color: AUTH_COLORS.text.primary,
+    marginBottom: AUTH_SPACING.sm,
   },
-  stepperNumActive: {
-    color: '#1D4ED8',
+  stepDescription: {
+    fontSize: 15,
+    color: AUTH_COLORS.text.secondary,
+    lineHeight: 22,
+    marginBottom: AUTH_SPACING.xl,
   },
-  stepperLabel: {
-    marginTop: 4,
-    color: '#6B7280',
-    fontSize: 12,
-    fontWeight: '700',
+  inputContainer: {
+    marginBottom: AUTH_SPACING.md,
   },
-  stepperLabelActive: {
-    color: '#1F2937',
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: AUTH_COLORS.text.primary,
+    marginBottom: AUTH_SPACING.sm,
   },
-  stepperConnector: {
-    flex: 1,
-    height: 2,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 6,
-    borderRadius: 2,
-  },
-  stepperConnectorActive: {
-    backgroundColor: '#93C5FD',
-  },
-  progressOuter: {
-    height: 6,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  progressInner: {
-    height: '100%',
-    backgroundColor: '#2563EB',
-  },
-  controlsRow: {
+  datePickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginTop: 12,
+    backgroundColor: AUTH_COLORS.backgroundSecondary,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: AUTH_COLORS.border,
+    paddingHorizontal: AUTH_SPACING.md,
+    height: 56,
+    gap: AUTH_SPACING.sm,
   },
-  secondaryBtn: {
-    flex: 1,
-    backgroundColor: '#EFF6FF',
-    paddingVertical: 12,
-    borderRadius: 12,
+  datePickerError: {
+    borderColor: AUTH_COLORS.error,
+    backgroundColor: AUTH_COLORS.errorSurface,
+  },
+  datePickerText: {
+    fontSize: 16,
+    color: AUTH_COLORS.text.primary,
+  },
+  datePickerPlaceholder: {
+    color: AUTH_COLORS.text.placeholder,
+  },
+  errorText: {
+    fontSize: 12,
+    color: AUTH_COLORS.error,
+    marginTop: AUTH_SPACING.xs,
+    marginLeft: AUTH_SPACING.xs,
+  },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: AUTH_SPACING.xl,
+    gap: AUTH_SPACING.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: AUTH_COLORS.border,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    marginTop: 2,
   },
-  secondaryBtnText: {
-    color: '#2563EB',
-    fontWeight: '800',
+  checkboxChecked: {
+    backgroundColor: AUTH_COLORS.primary,
+    borderColor: AUTH_COLORS.primary,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 14,
+    color: AUTH_COLORS.text.secondary,
+    lineHeight: 20,
+  },
+  termsLink: {
+    color: AUTH_COLORS.primary,
+    fontWeight: '600',
+  },
+  bottomActionsInner: {
+    marginTop: AUTH_SPACING.xl,
+    paddingTop: AUTH_SPACING.xl,
+    paddingBottom: AUTH_SPACING.xl,
+  },
+  loginLink: {
+    marginTop: AUTH_SPACING.md,
+    alignItems: 'center',
+  },
+  loginLinkText: {
+    fontSize: 14,
+    color: AUTH_COLORS.text.secondary,
+  },
+  loginLinkBold: {
+    fontWeight: '700',
+    color: AUTH_COLORS.primary,
   },
 });
